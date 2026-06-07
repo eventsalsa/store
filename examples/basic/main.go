@@ -3,14 +3,13 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/eventsalsa/store"
 	"github.com/eventsalsa/store/postgres"
@@ -33,13 +32,13 @@ type UserEmailChanged struct {
 func main() {
 	connStr := "host=localhost port=5432 user=postgres password=postgres dbname=eventsalsa_example sslmode=disable"
 
-	db, err := sql.Open("postgres", connStr)
+	ctx := context.Background()
+
+	db, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
-
-	ctx := context.Background()
 
 	// Create event store
 	eventStore := postgres.NewStore(postgres.DefaultStoreConfig())
@@ -69,13 +68,13 @@ func main() {
 		},
 	}
 
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := db.Begin(ctx)
 	if err != nil {
 		log.Fatalf("Failed to begin transaction: %v", err)
 	}
 	defer func() {
 		//nolint:errcheck // Rollback error ignored: expected to fail if commit succeeds
-		tx.Rollback()
+		_ = tx.Rollback(ctx)
 	}()
 
 	result, err := eventStore.Append(ctx, tx, store.NoStream(), events)
@@ -83,7 +82,7 @@ func main() {
 		log.Fatalf("Failed to append events: %v", err)
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("Failed to commit: %v", err)
 	}
 
@@ -114,13 +113,13 @@ func main() {
 		},
 	}
 
-	tx2, err := db.BeginTx(ctx, nil)
+	tx2, err := db.Begin(ctx)
 	if err != nil {
 		log.Fatalf("Failed to begin transaction: %v", err)
 	}
 	defer func() {
 		//nolint:errcheck
-		tx2.Rollback()
+		_ = tx2.Rollback(ctx)
 	}()
 
 	result2, err := eventStore.Append(ctx, tx2, store.Exact(1), events2)
@@ -128,7 +127,7 @@ func main() {
 		log.Fatalf("Failed to append events: %v", err)
 	}
 
-	if err := tx2.Commit(); err != nil {
+	if err := tx2.Commit(ctx); err != nil {
 		log.Fatalf("Failed to commit: %v", err)
 	}
 
@@ -137,13 +136,13 @@ func main() {
 	// --- Example 3: Read aggregate stream ---
 	fmt.Println("\n--- Example 3: Read Aggregate Stream ---")
 
-	tx3, err := db.BeginTx(ctx, nil)
+	tx3, err := db.Begin(ctx)
 	if err != nil {
 		log.Fatalf("Failed to begin transaction: %v", err)
 	}
 	defer func() {
 		//nolint:errcheck
-		tx3.Rollback()
+		_ = tx3.Rollback(ctx)
 	}()
 
 	stream, err := eventStore.ReadAggregateStream(ctx, tx3, "User", userID, nil, nil)
@@ -151,7 +150,7 @@ func main() {
 		log.Fatalf("Failed to read aggregate stream: %v", err)
 	}
 
-	if err := tx3.Commit(); err != nil {
+	if err := tx3.Commit(ctx); err != nil {
 		log.Fatalf("Failed to commit: %v", err)
 	}
 
@@ -164,13 +163,13 @@ func main() {
 	// --- Example 4: Read events sequentially ---
 	fmt.Println("\n--- Example 4: Read Events Sequentially ---")
 
-	tx4, err := db.BeginTx(ctx, nil)
+	tx4, err := db.Begin(ctx)
 	if err != nil {
 		log.Fatalf("Failed to begin transaction: %v", err)
 	}
 	defer func() {
 		//nolint:errcheck
-		tx4.Rollback()
+		_ = tx4.Rollback(ctx)
 	}()
 
 	allEvents, err := eventStore.ReadEvents(ctx, tx4, 0, 100)
@@ -178,7 +177,7 @@ func main() {
 		log.Fatalf("Failed to read events: %v", err)
 	}
 
-	if err := tx4.Commit(); err != nil {
+	if err := tx4.Commit(ctx); err != nil {
 		log.Fatalf("Failed to commit: %v", err)
 	}
 

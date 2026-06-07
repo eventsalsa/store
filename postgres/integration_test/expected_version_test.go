@@ -42,7 +42,7 @@ func TestExpectedVersion_NoStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First append with NoStream() should succeed: %v", err)
 	}
-	if err := tx1.Commit(); err != nil {
+	if err := tx1.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 
@@ -56,7 +56,7 @@ func TestExpectedVersion_NoStream(t *testing.T) {
 	if err != store.ErrOptimisticConcurrency {
 		t.Fatalf("Second append with NoStream() should fail with ErrOptimisticConcurrency, got: %v", err)
 	}
-	tx2.Rollback()
+	tx2.Rollback(ctx)
 }
 
 // TestExpectedVersion_Exact tests that Exact(N) enforces exact version match
@@ -88,7 +88,7 @@ func TestExpectedVersion_Exact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First append should succeed: %v", err)
 	}
-	if err := tx1.Commit(); err != nil {
+	if err := tx1.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 
@@ -109,7 +109,7 @@ func TestExpectedVersion_Exact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Append with Exact(1) should succeed: %v", err)
 	}
-	if err := tx2.Commit(); err != nil {
+	if err := tx2.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestExpectedVersion_Exact(t *testing.T) {
 	if err != store.ErrOptimisticConcurrency {
 		t.Fatalf("Append with Exact(1) should fail with ErrOptimisticConcurrency, got: %v", err)
 	}
-	tx3.Rollback()
+	tx3.Rollback(ctx)
 
 	// Append with Exact(2) should succeed
 	tx4, _ := db.BeginTx(ctx, nil)
@@ -138,7 +138,7 @@ func TestExpectedVersion_Exact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Append with Exact(2) should succeed: %v", err)
 	}
-	if err := tx4.Commit(); err != nil {
+	if err := tx4.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 }
@@ -172,7 +172,7 @@ func TestExpectedVersion_Exact_NonExistent(t *testing.T) {
 	if err != store.ErrOptimisticConcurrency {
 		t.Fatalf("Append with Exact(1) on non-existent aggregate should fail with ErrOptimisticConcurrency, got: %v", err)
 	}
-	tx.Rollback()
+	tx.Rollback(ctx)
 }
 
 // TestExpectedVersion_Exact_Zero tests that Exact(0) can be used to create new aggregates
@@ -204,7 +204,7 @@ func TestExpectedVersion_Exact_Zero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First append with Exact(0) should succeed: %v", err)
 	}
-	if err := tx1.Commit(); err != nil {
+	if err := tx1.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 
@@ -223,7 +223,7 @@ func TestExpectedVersion_Exact_Zero(t *testing.T) {
 	if err != store.ErrOptimisticConcurrency {
 		t.Fatalf("Second append with Exact(0) should fail with ErrOptimisticConcurrency, got: %v", err)
 	}
-	tx2.Rollback()
+	tx2.Rollback(ctx)
 }
 
 // TestExpectedVersion_Any tests that Any() allows appends regardless of version
@@ -255,7 +255,7 @@ func TestExpectedVersion_Any(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First append with Any() should succeed: %v", err)
 	}
-	if err := tx1.Commit(); err != nil {
+	if err := tx1.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 
@@ -276,7 +276,7 @@ func TestExpectedVersion_Any(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Second append with Any() should succeed: %v", err)
 	}
-	if err := tx2.Commit(); err != nil {
+	if err := tx2.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 }
@@ -311,7 +311,7 @@ func TestExpectedVersion_UniquenessPattern(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First email reservation should succeed: %v", err)
 	}
-	if err := tx1.Commit(); err != nil {
+	if err := tx1.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 
@@ -324,5 +324,5 @@ func TestExpectedVersion_UniquenessPattern(t *testing.T) {
 	if err != store.ErrOptimisticConcurrency {
 		t.Fatalf("Second email reservation should fail with ErrOptimisticConcurrency, got: %v", err)
 	}
-	tx2.Rollback()
+	tx2.Rollback(ctx)
 }

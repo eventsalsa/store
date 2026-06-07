@@ -9,21 +9,48 @@ package integration_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/eventsalsa/store"
 	"github.com/eventsalsa/store/migrations"
 	"github.com/eventsalsa/store/postgres"
 )
 
-func getTestDB(t *testing.T) *sql.DB {
+type txOptions struct {
+	ReadOnly bool
+}
+
+type testDB struct {
+	*pgxpool.Pool
+}
+
+func (db testDB) BeginTx(ctx context.Context, opts *txOptions) (pgx.Tx, error) {
+	if opts != nil && opts.ReadOnly {
+		return db.Pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	}
+	return db.Pool.Begin(ctx)
+}
+
+func (db testDB) PingContext(ctx context.Context) error {
+	return db.Ping(ctx)
+}
+
+func (db testDB) QueryRowContext(ctx context.Context, query string, args ...any) pgx.Row {
+	return db.QueryRow(ctx, query, args...)
+}
+
+func (db testDB) QueryContext(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+	return db.Query(ctx, query, args...)
+}
+
+func getTestDB(t *testing.T) testDB {
 	t.Helper()
 
 	// Default to localhost, but allow override via env var for CI
@@ -55,27 +82,29 @@ func getTestDB(t *testing.T) *sql.DB {
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
 
-	db, err := sql.Open("postgres", connStr)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		t.Fatalf("Failed to connect to database: %v", err)
 	}
 
 	// Verify connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := db.PingContext(ctx); err != nil {
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		t.Fatalf("Failed to ping database: %v", err)
 	}
 
-	return db
+	return testDB{pool}
 }
 
-func setupTestTables(t *testing.T, db *sql.DB) {
+func setupTestTables(t *testing.T, db testDB) {
 	t.Helper()
+	ctx := context.Background()
 
 	// Drop existing objects to ensure clean state
-	_, err := db.Exec(`
+	_, err := db.Exec(ctx, `
 		DROP TABLE IF EXISTS aggregate_heads CASCADE;
 		DROP TABLE IF EXISTS events CASCADE;
 	`)
@@ -101,7 +130,7 @@ func setupTestTables(t *testing.T, db *sql.DB) {
 		t.Fatalf("Failed to read migration: %v", err)
 	}
 
-	_, err = db.Exec(string(migrationSQL))
+	_, err = db.Exec(ctx, string(migrationSQL))
 	if err != nil {
 		t.Fatalf("Failed to execute migration: %v", err)
 	}
@@ -145,7 +174,7 @@ func TestAppendEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to begin transaction: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback(ctx)
 
 	// Use NoStream() for creating a new aggregate
 	result, err := pgStore.Append(ctx, tx, store.NoStream(), events)
@@ -183,7 +212,7 @@ func TestAppendEvents(t *testing.T) {
 		t.Errorf("Expected ToVersion=2, got %d", result.ToVersion())
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 }
@@ -216,7 +245,7 @@ func TestAppendEvents_OptimisticConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First append failed: %v", err)
 	}
-	if err := tx1.Commit(); err != nil {
+	if err := tx1.Commit(ctx); err != nil {
 		t.Fatalf("First transaction commit failed: %v", err)
 	}
 
@@ -234,10 +263,10 @@ func TestAppendEvents_OptimisticConcurrency(t *testing.T) {
 	}
 
 	tx2, _ := db.BeginTx(ctx, nil)
-	defer tx2.Rollback() //nolint:errcheck // cleanup
+	defer tx2.Rollback(ctx) //nolint:errcheck // cleanup
 
 	// Manually insert with version=1 (which already exists) to trigger unique constraint violation
-	_, err = tx2.ExecContext(ctx, `
+	_, err = tx2.Exec(ctx, `
 		INSERT INTO events (
 			aggregate_type, aggregate_id, aggregate_version,
 			event_id, event_type, event_version,
@@ -303,11 +332,11 @@ func TestReadEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append second event: %v", err)
 	}
-	tx.Commit()
+	tx.Commit(ctx)
 
 	// Read events
 	tx2, _ := db.BeginTx(ctx, nil)
-	defer tx2.Rollback()
+	defer tx2.Rollback(ctx)
 
 	readEvents, err := pgStore.ReadEvents(ctx, tx2, 0, 10)
 	if err != nil {
@@ -351,7 +380,7 @@ func TestReadEvents_RawCheckpointCanSkipEarlierLaterCommittedPosition(t *testing
 		t.Fatalf("Failed to begin first transaction: %v", err)
 	}
 	defer func() {
-		_ = txA.Rollback()
+		_ = txA.Rollback(ctx)
 	}()
 
 	resultA, err := pgStore.Append(ctx, txA, store.NoStream(), []store.Event{newEvent("User", "UserCreated")})
@@ -364,7 +393,7 @@ func TestReadEvents_RawCheckpointCanSkipEarlierLaterCommittedPosition(t *testing
 		t.Fatalf("Failed to begin second transaction: %v", err)
 	}
 	defer func() {
-		_ = txB.Rollback()
+		_ = txB.Rollback(ctx)
 	}()
 
 	resultB, err := pgStore.Append(ctx, txB, store.NoStream(), []store.Event{newEvent("Order", "OrderPlaced")})
@@ -378,16 +407,16 @@ func TestReadEvents_RawCheckpointCanSkipEarlierLaterCommittedPosition(t *testing
 		t.Fatalf("Expected first transaction to allocate lower position than second: %d >= %d", posA, posB)
 	}
 
-	if err := txB.Commit(); err != nil {
+	if err := txB.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit second transaction: %v", err)
 	}
 
-	readTx1, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	readTx1, err := db.BeginTx(ctx, &txOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("Failed to begin read transaction before first commit: %v", err)
 	}
 	defer func() {
-		_ = readTx1.Rollback()
+		_ = readTx1.Rollback(ctx)
 	}()
 
 	visibleBeforeFirstCommit, err := pgStore.ReadEvents(ctx, readTx1, 0, 10)
@@ -404,16 +433,16 @@ func TestReadEvents_RawCheckpointCanSkipEarlierLaterCommittedPosition(t *testing
 
 	checkpoint := visibleBeforeFirstCommit[0].GlobalPosition
 
-	if err := txA.Commit(); err != nil {
+	if err := txA.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit first transaction: %v", err)
 	}
 
-	readTx2, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	readTx2, err := db.BeginTx(ctx, &txOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("Failed to begin read transaction after both commits: %v", err)
 	}
 	defer func() {
-		_ = readTx2.Rollback()
+		_ = readTx2.Rollback(ctx)
 	}()
 
 	eventsAfterCheckpoint, err := pgStore.ReadEvents(ctx, readTx2, checkpoint, 10)
@@ -425,12 +454,12 @@ func TestReadEvents_RawCheckpointCanSkipEarlierLaterCommittedPosition(t *testing
 		t.Fatalf("Expected no events after checkpoint %d, got %d", checkpoint, len(eventsAfterCheckpoint))
 	}
 
-	readTx3, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	readTx3, err := db.BeginTx(ctx, &txOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("Failed to begin verification read transaction: %v", err)
 	}
 	defer func() {
-		_ = readTx3.Rollback()
+		_ = readTx3.Rollback(ctx)
 	}()
 
 	allEvents, err := pgStore.ReadEvents(ctx, readTx3, 0, 10)
@@ -474,7 +503,7 @@ func TestReadEvents_RawPositionsCanContainPermanentGapAfterRollback(t *testing.T
 		t.Fatalf("Failed to begin rollback transaction: %v", err)
 	}
 	defer func() {
-		_ = txRolledBack.Rollback()
+		_ = txRolledBack.Rollback(ctx)
 	}()
 
 	rolledBackResult, err := pgStore.Append(ctx, txRolledBack, store.NoStream(), []store.Event{newEvent("User", "UserCreated")})
@@ -487,7 +516,7 @@ func TestReadEvents_RawPositionsCanContainPermanentGapAfterRollback(t *testing.T
 		t.Fatalf("Failed to begin committed transaction: %v", err)
 	}
 	defer func() {
-		_ = txCommitted.Rollback()
+		_ = txCommitted.Rollback(ctx)
 	}()
 
 	committedResult, err := pgStore.Append(ctx, txCommitted, store.NoStream(), []store.Event{newEvent("Order", "OrderPlaced")})
@@ -502,19 +531,19 @@ func TestReadEvents_RawPositionsCanContainPermanentGapAfterRollback(t *testing.T
 			rolledBackPos, committedPos)
 	}
 
-	if err := txRolledBack.Rollback(); err != nil {
+	if err := txRolledBack.Rollback(ctx); err != nil {
 		t.Fatalf("Failed to roll back first transaction: %v", err)
 	}
-	if err := txCommitted.Commit(); err != nil {
+	if err := txCommitted.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit second transaction: %v", err)
 	}
 
-	readTx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	readTx, err := db.BeginTx(ctx, &txOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("Failed to begin read transaction: %v", err)
 	}
 	defer func() {
-		_ = readTx.Rollback()
+		_ = readTx.Rollback(ctx)
 	}()
 
 	visibleEvents, err := pgStore.ReadEvents(ctx, readTx, 0, 10)
@@ -530,7 +559,7 @@ func TestReadEvents_RawPositionsCanContainPermanentGapAfterRollback(t *testing.T
 	}
 
 	var count int
-	if err := readTx.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE global_position = $1`, rolledBackPos).Scan(&count); err != nil {
+	if err := readTx.QueryRow(ctx, `SELECT COUNT(*) FROM events WHERE global_position = $1`, rolledBackPos).Scan(&count); err != nil {
 		t.Fatalf("Failed to check rolled back position visibility: %v", err)
 	}
 	if count != 0 {
@@ -573,12 +602,12 @@ func TestReadEvents_Pagination(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to append event: %v", err)
 		}
-		tx.Commit()
+		tx.Commit(ctx)
 	}
 
 	// Read first batch
 	tx1, _ := db.BeginTx(ctx, nil)
-	defer tx1.Rollback()
+	defer tx1.Rollback(ctx)
 
 	batch1, err := pgStore.ReadEvents(ctx, tx1, 0, 2)
 	if err != nil {
@@ -591,7 +620,7 @@ func TestReadEvents_Pagination(t *testing.T) {
 
 	// Read second batch
 	tx2, _ := db.BeginTx(ctx, nil)
-	defer tx2.Rollback()
+	defer tx2.Rollback(ctx)
 
 	batch2, err := pgStore.ReadEvents(ctx, tx2, batch1[len(batch1)-1].GlobalPosition, 2)
 	if err != nil {
@@ -652,7 +681,7 @@ func TestAggregateVersionTracking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First append failed: %v", err)
 	}
-	if err := tx1.Commit(); err != nil {
+	if err := tx1.Commit(ctx); err != nil {
 		t.Fatalf("First commit failed: %v", err)
 	}
 
@@ -689,7 +718,7 @@ func TestAggregateVersionTracking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Second append failed: %v", err)
 	}
-	if err := tx2.Commit(); err != nil {
+	if err := tx2.Commit(ctx); err != nil {
 		t.Fatalf("Second commit failed: %v", err)
 	}
 
@@ -787,7 +816,7 @@ func TestAggregateVersionTracking_MultipleAggregates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append events for aggregate1: %v", err)
 	}
-	if err := tx1.Commit(); err != nil {
+	if err := tx1.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit aggregate1: %v", err)
 	}
 
@@ -796,7 +825,7 @@ func TestAggregateVersionTracking_MultipleAggregates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append events for aggregate2: %v", err)
 	}
-	if err := tx2.Commit(); err != nil {
+	if err := tx2.Commit(ctx); err != nil {
 		t.Fatalf("Failed to commit aggregate2: %v", err)
 	}
 
@@ -887,11 +916,11 @@ func TestReadAggregateStream_FullStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append events: %v", err)
 	}
-	tx.Commit()
+	tx.Commit(ctx)
 
 	// Read full stream
 	tx2, _ := db.BeginTx(ctx, nil)
-	defer tx2.Rollback()
+	defer tx2.Rollback(ctx)
 
 	stream, err := pgStore.ReadAggregateStream(ctx, tx2, "TestAggregate", aggregateID, nil, nil)
 	if err != nil {
@@ -971,11 +1000,11 @@ func TestReadAggregateStream_WithFromVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append events: %v", err)
 	}
-	tx.Commit()
+	tx.Commit(ctx)
 
 	// Read from version 2 onwards
 	tx2, _ := db.BeginTx(ctx, nil)
-	defer tx2.Rollback()
+	defer tx2.Rollback(ctx)
 
 	fromVersion := int64(2)
 	stream, err := pgStore.ReadAggregateStream(ctx, tx2, "TestAggregate", aggregateID, &fromVersion, nil)
@@ -1050,11 +1079,11 @@ func TestReadAggregateStream_WithToVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append events: %v", err)
 	}
-	tx.Commit()
+	tx.Commit(ctx)
 
 	// Read up to version 2
 	tx2, _ := db.BeginTx(ctx, nil)
-	defer tx2.Rollback()
+	defer tx2.Rollback(ctx)
 
 	toVersion := int64(2)
 	stream, err := pgStore.ReadAggregateStream(ctx, tx2, "TestAggregate", aggregateID, nil, &toVersion)
@@ -1139,11 +1168,11 @@ func TestReadAggregateStream_WithVersionRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append events: %v", err)
 	}
-	tx.Commit()
+	tx.Commit(ctx)
 
 	// Read versions 2-3
 	tx2, _ := db.BeginTx(ctx, nil)
-	defer tx2.Rollback()
+	defer tx2.Rollback(ctx)
 
 	fromVersion := int64(2)
 	toVersion := int64(3)
@@ -1183,7 +1212,7 @@ func TestReadAggregateStream_EmptyResult(t *testing.T) {
 
 	// Try to read non-existent aggregate
 	tx, _ := db.BeginTx(ctx, nil)
-	defer tx.Rollback()
+	defer tx.Rollback(ctx)
 
 	nonExistentID := uuid.New().String()
 	stream, err := pgStore.ReadAggregateStream(ctx, tx, "TestAggregate", nonExistentID, nil, nil)
@@ -1254,18 +1283,18 @@ func TestReadAggregateStream_MultipleAggregates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append events for aggregate1: %v", err)
 	}
-	tx1.Commit()
+	tx1.Commit(ctx)
 
 	tx2, _ := db.BeginTx(ctx, nil)
 	_, err = pgStore.Append(ctx, tx2, store.Any(), events2)
 	if err != nil {
 		t.Fatalf("Failed to append events for aggregate2: %v", err)
 	}
-	tx2.Commit()
+	tx2.Commit(ctx)
 
 	// Read aggregate1 stream
 	tx3, _ := db.BeginTx(ctx, nil)
-	defer tx3.Rollback()
+	defer tx3.Rollback(ctx)
 
 	stream1, err := pgStore.ReadAggregateStream(ctx, tx3, "TestAggregate", aggregate1, nil, nil)
 	if err != nil {
@@ -1330,7 +1359,7 @@ func TestReadAggregateStream_Ordering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append first batch: %v", err)
 	}
-	tx1.Commit()
+	tx1.Commit(ctx)
 
 	// Append event for different aggregate in between
 	otherAggregate := uuid.New().String()
@@ -1352,7 +1381,7 @@ func TestReadAggregateStream_Ordering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append other event: %v", err)
 	}
-	tx2.Commit()
+	tx2.Commit(ctx)
 
 	// Second batch for our aggregate
 	events2 := []store.Event{
@@ -1373,11 +1402,11 @@ func TestReadAggregateStream_Ordering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to append second batch: %v", err)
 	}
-	tx3.Commit()
+	tx3.Commit(ctx)
 
 	// Read the stream
 	tx4, _ := db.BeginTx(ctx, nil)
-	defer tx4.Rollback()
+	defer tx4.Rollback(ctx)
 
 	stream, err := pgStore.ReadAggregateStream(ctx, tx4, "TestAggregate", aggregateID, nil, nil)
 	if err != nil {

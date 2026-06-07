@@ -12,7 +12,7 @@ A minimal, production-ready event store for Go.
 - **Optimistic concurrency control** — via expected versions enforced at the application and database level
 - **Aggregate stream reads** — load a full or partial event history with optional version ranges
 - **Sequential event reading** — read events by global position for building consumers and projections
-- **Transaction-first design** — all operations accept `*sql.Tx`; you control transaction boundaries
+- **Transaction-first design** — all operations accept `pgx.Tx`; you control transaction boundaries
 - **Consumer interfaces** — `Consumer` and `ScopedConsumer` for event processing
 - **SQL migration generator** — `cmd/migrate-gen` generates a ready-to-apply `.sql` file
 - **Event mapping code generator** — `cmd/eventmap-gen` generates type-safe domain event mappings
@@ -29,7 +29,7 @@ go get github.com/eventsalsa/store
 Choose your PostgreSQL driver:
 
 ```bash
-go get github.com/lib/pq
+go get github.com/jackc/pgx/v5
 ```
 
 ### 2. Generate Migrations
@@ -51,37 +51,36 @@ package main
 
 import (
     "context"
-    "database/sql"
     "encoding/json"
     "log"
     "time"
 
     "github.com/google/uuid"
-    _ "github.com/lib/pq"
+    "github.com/jackc/pgx/v5/pgxpool"
 
     "github.com/eventsalsa/store"
     "github.com/eventsalsa/store/postgres"
 )
 
 func main() {
-    db, err := sql.Open("postgres", "host=localhost user=postgres dbname=mydb sslmode=disable")
+    ctx := context.Background()
+    db, err := pgxpool.New(ctx, "host=localhost user=postgres dbname=mydb sslmode=disable")
     if err != nil {
         log.Fatal(err)
     }
     defer db.Close()
 
-    ctx := context.Background()
     s := postgres.NewStore(postgres.DefaultStoreConfig())
 
     // Append events to a new aggregate
     userID := uuid.New().String()
     payload, _ := json.Marshal(map[string]string{"email": "alice@example.com", "name": "Alice"})
 
-    tx, err := db.BeginTx(ctx, nil)
+    tx, err := db.Begin(ctx)
     if err != nil {
         log.Fatal(err)
     }
-    defer tx.Rollback() //nolint:errcheck
+    defer tx.Rollback(ctx) //nolint:errcheck
 
     result, err := s.Append(ctx, tx, store.NoStream(), []store.Event{
         {
@@ -99,7 +98,7 @@ func main() {
         log.Fatal(err)
     }
 
-    if err := tx.Commit(); err != nil {
+    if err := tx.Commit(ctx); err != nil {
         log.Fatal(err)
     }
 
@@ -107,14 +106,14 @@ func main() {
         result.GlobalPositions, result.ToVersion())
 
     // Read the aggregate stream
-    tx2, _ := db.BeginTx(ctx, nil)
-    defer tx2.Rollback() //nolint:errcheck
+    tx2, _ := db.Begin(ctx)
+    defer tx2.Rollback(ctx) //nolint:errcheck
 
     stream, err := s.ReadAggregateStream(ctx, tx2, "User", userID, nil, nil)
     if err != nil {
         log.Fatal(err)
     }
-    tx2.Commit() //nolint:errcheck
+    tx2.Commit(ctx) //nolint:errcheck
 
     log.Printf("stream: %d events, current version %d", stream.Len(), stream.Version())
     for _, e := range stream.Events {
@@ -257,10 +256,10 @@ type AuditLogConsumer struct{}
 
 func (c *AuditLogConsumer) Name() string { return "audit_log.v1" }
 
-func (c *AuditLogConsumer) Handle(ctx context.Context, tx *sql.Tx, event store.PersistedEvent) error {
+func (c *AuditLogConsumer) Handle(ctx context.Context, tx pgx.Tx, event store.PersistedEvent) error {
     // tx is the processor's transaction — use it for atomic read model + checkpoint updates.
     // Never call tx.Commit() or tx.Rollback() here; the processor owns that.
-    _, err := tx.ExecContext(ctx,
+    _, err := tx.Exec(ctx,
         "INSERT INTO audit_log (event_id, event_type, occurred_at) VALUES ($1, $2, $3)",
         event.EventID, event.EventType, event.CreatedAt,
     )
@@ -276,7 +275,7 @@ type UserReadModel struct{}
 func (p *UserReadModel) Name() string              { return "user_read_model.v1" }
 func (p *UserReadModel) AggregateTypes() []string  { return []string{"User"} }
 
-func (p *UserReadModel) Handle(ctx context.Context, tx *sql.Tx, event store.PersistedEvent) error {
+func (p *UserReadModel) Handle(ctx context.Context, tx pgx.Tx, event store.PersistedEvent) error {
     // Only receives events where AggregateType == "User"
     return nil
 }

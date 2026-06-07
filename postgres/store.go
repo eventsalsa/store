@@ -3,9 +3,11 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/eventsalsa/store"
 )
@@ -109,7 +111,7 @@ func NewStore(config *StoreConfig) *Store {
 // check and insert, the insert will fail with a unique constraint violation.
 //
 //nolint:gocyclo // Cyclomatic complexity is acceptable here - comes from necessary logging and validation checks
-func (s *Store) Append(ctx context.Context, tx *sql.Tx, expectedVersion store.ExpectedVersion, events []store.Event) (store.AppendResult, error) {
+func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.ExpectedVersion, events []store.Event) (store.AppendResult, error) {
 	if len(events) == 0 {
 		return store.AppendResult{}, store.ErrNoEvents
 	}
@@ -133,7 +135,7 @@ func (s *Store) Append(ctx context.Context, tx *sql.Tx, expectedVersion store.Ex
 	}
 
 	// Fetch current version from aggregate_heads table
-	var currentVersion sql.NullInt64
+	var currentVersion *int64
 	//nolint:gosec // G201: table name from trusted config, not user input
 	query := fmt.Sprintf(`
 		SELECT aggregate_version 
@@ -141,26 +143,26 @@ func (s *Store) Append(ctx context.Context, tx *sql.Tx, expectedVersion store.Ex
 		WHERE aggregate_type = $1 AND aggregate_id = $2
 	`, s.config.AggregateHeadsTable)
 
-	err := tx.QueryRowContext(ctx, query, firstEvent.AggregateType, firstEvent.AggregateID).Scan(&currentVersion)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	err := tx.QueryRow(ctx, query, firstEvent.AggregateType, firstEvent.AggregateID).Scan(&currentVersion)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return store.AppendResult{}, fmt.Errorf("failed to check current version: %w", err)
 	}
 
 	// Validate expected version
 	if !expectedVersion.IsAny() {
 		if expectedVersion.IsNoStream() {
-			if currentVersion.Valid {
+			if currentVersion != nil {
 				if s.config.Logger != nil {
 					s.config.Logger.Error(ctx, "expected version validation failed: aggregate already exists",
 						"aggregate_type", firstEvent.AggregateType,
 						"aggregate_id", firstEvent.AggregateID,
-						"current_version", currentVersion.Int64,
+						"current_version", *currentVersion,
 						"expected_version", expectedVersion.String())
 				}
 				return store.AppendResult{}, store.ErrOptimisticConcurrency
 			}
 		} else if expectedVersion.IsExact() {
-			if !currentVersion.Valid {
+			if currentVersion == nil {
 				if s.config.Logger != nil {
 					s.config.Logger.Error(ctx, "expected version validation failed: aggregate does not exist",
 						"aggregate_type", firstEvent.AggregateType,
@@ -169,12 +171,12 @@ func (s *Store) Append(ctx context.Context, tx *sql.Tx, expectedVersion store.Ex
 				}
 				return store.AppendResult{}, store.ErrOptimisticConcurrency
 			}
-			if currentVersion.Int64 != expectedVersion.Value() {
+			if *currentVersion != expectedVersion.Value() {
 				if s.config.Logger != nil {
 					s.config.Logger.Error(ctx, "expected version validation failed: version mismatch",
 						"aggregate_type", firstEvent.AggregateType,
 						"aggregate_id", firstEvent.AggregateID,
-						"current_version", currentVersion.Int64,
+						"current_version", *currentVersion,
 						"expected_version", expectedVersion.String())
 				}
 				return store.AppendResult{}, store.ErrOptimisticConcurrency
@@ -184,18 +186,18 @@ func (s *Store) Append(ctx context.Context, tx *sql.Tx, expectedVersion store.Ex
 
 	// Determine starting version for new events
 	var nextVersion int64
-	if currentVersion.Valid {
-		nextVersion = currentVersion.Int64 + 1
+	if currentVersion != nil {
+		nextVersion = *currentVersion + 1
 	} else {
 		nextVersion = 1
 	}
 
 	if s.config.Logger != nil {
-		if currentVersion.Valid {
+		if currentVersion != nil {
 			s.config.Logger.Debug(ctx, "version calculated",
 				"aggregate_type", firstEvent.AggregateType,
 				"aggregate_id", firstEvent.AggregateID,
-				"current_version", currentVersion.Int64,
+				"current_version", *currentVersion,
 				"next_version", nextVersion)
 		} else {
 			s.config.Logger.Debug(ctx, "version calculated",
@@ -225,7 +227,7 @@ func (s *Store) Append(ctx context.Context, tx *sql.Tx, expectedVersion store.Ex
 		aggregateVersion := nextVersion + int64(i)
 
 		var globalPos int64
-		err = tx.QueryRowContext(ctx, insertQuery,
+		err = tx.QueryRow(ctx, insertQuery,
 			event.AggregateType,
 			event.AggregateID,
 			aggregateVersion,
@@ -281,7 +283,7 @@ func (s *Store) Append(ctx context.Context, tx *sql.Tx, expectedVersion store.Ex
 		DO UPDATE SET aggregate_version = $3, updated_at = NOW()
 	`, s.config.AggregateHeadsTable)
 
-	_, err = tx.ExecContext(ctx, upsertQuery, firstEvent.AggregateType, firstEvent.AggregateID, latestVersion)
+	_, err = tx.Exec(ctx, upsertQuery, firstEvent.AggregateType, firstEvent.AggregateID, latestVersion)
 	if err != nil {
 		return store.AppendResult{}, fmt.Errorf("failed to update aggregate head: %w", err)
 	}
@@ -289,7 +291,7 @@ func (s *Store) Append(ctx context.Context, tx *sql.Tx, expectedVersion store.Ex
 	// Send transactional NOTIFY — fires only when the caller commits the TX
 	if s.config.NotifyChannel != "" {
 		lastPos := globalPositions[len(globalPositions)-1]
-		_, err = tx.ExecContext(ctx, "SELECT pg_notify($1, $2)", s.config.NotifyChannel, fmt.Sprintf("%d", lastPos))
+		_, err = tx.Exec(ctx, "SELECT pg_notify($1, $2)", s.config.NotifyChannel, fmt.Sprintf("%d", lastPos))
 		if err != nil {
 			return store.AppendResult{}, fmt.Errorf("failed to send notify: %w", err)
 		}
@@ -314,61 +316,26 @@ const uniqueViolationSQLState = "23505"
 
 // IsUniqueViolation checks if an error is a PostgreSQL unique constraint violation.
 // This is exported for testing purposes.
-// Driver-agnostic: works with pq, pgx, and database/sql.
 func IsUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// pgx driver: check for SQLState() method
-	type pgxError interface {
-		SQLState() string
-	}
-	var pgxErr pgxError
-	if errors.As(err, &pgxErr) {
-		return pgxErr.SQLState() == uniqueViolationSQLState
-	}
-
-	// pq driver: check for Code field
-	var pqErr interface {
-		Code() string
-	}
-	if errors.As(err, &pqErr) {
-		return pqErr.Code() == uniqueViolationSQLState
-	}
-
-	// Fallback: check error message for common patterns (for wrapped or custom errors)
-	errMsg := fmt.Sprintf("%v", err)
-	return containsString(errMsg, "duplicate key") || containsString(errMsg, "unique constraint")
-}
-
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-			findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == uniqueViolationSQLState
 	}
 	return false
 }
 
 // ReadEvents implements store.EventReader.
-func (s *Store) ReadEvents(ctx context.Context, tx *sql.Tx, fromPosition int64, limit int) ([]store.PersistedEvent, error) {
+func (s *Store) ReadEvents(ctx context.Context, tx pgx.Tx, fromPosition int64, limit int) ([]store.PersistedEvent, error) {
 	return s.readEvents(ctx, tx, fromPosition, limit)
 }
 
-func (s *Store) readEvents(ctx context.Context, tx *sql.Tx, fromPosition int64, limit int) ([]store.PersistedEvent, error) {
+func (s *Store) readEvents(ctx context.Context, tx pgx.Tx, fromPosition int64, limit int) ([]store.PersistedEvent, error) {
 	if s.config.Logger != nil {
 		s.config.Logger.Debug(ctx, "reading events", "from_position", fromPosition, "limit", limit)
 	}
 
 	query, args := buildReadEventsQuery(s.config.EventsTable, fromPosition, limit)
-	rows, err := tx.QueryContext(ctx, query, args...)
+	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query events: %w", err)
 	}
@@ -413,7 +380,7 @@ func buildReadEventsQuery(
 	eventsTable string,
 	fromPosition int64,
 	limit int,
-) (query string, args []interface{}) {
+) (query string, args []any) {
 	query = fmt.Sprintf(`
 		SELECT 
 			global_position, aggregate_type, aggregate_id, aggregate_version,
@@ -425,13 +392,13 @@ func buildReadEventsQuery(
 	`, eventsTable)
 
 	query += "\n\t\tORDER BY global_position ASC\n\t\tLIMIT $2\n\t"
-	args = []interface{}{fromPosition, limit}
+	args = []any{fromPosition, limit}
 
 	return query, args
 }
 
 // GetLatestGlobalPosition implements store.GlobalPositionReader.
-func (s *Store) GetLatestGlobalPosition(ctx context.Context, tx *sql.Tx) (int64, error) {
+func (s *Store) GetLatestGlobalPosition(ctx context.Context, tx pgx.Tx) (int64, error) {
 	//nolint:gosec // G201: table name from trusted config, not user input
 	query := fmt.Sprintf(`
 		SELECT global_position
@@ -441,9 +408,9 @@ func (s *Store) GetLatestGlobalPosition(ctx context.Context, tx *sql.Tx) (int64,
 	`, s.config.EventsTable)
 
 	var position int64
-	err := tx.QueryRowContext(ctx, query).Scan(&position)
+	err := tx.QueryRow(ctx, query).Scan(&position)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, nil
 		}
 		return 0, err
@@ -453,7 +420,7 @@ func (s *Store) GetLatestGlobalPosition(ctx context.Context, tx *sql.Tx) (int64,
 }
 
 // ReadAggregateStream implements store.AggregateStreamReader.
-func (s *Store) ReadAggregateStream(ctx context.Context, tx *sql.Tx, aggregateType, aggregateID string, fromVersion, toVersion *int64) (store.Stream, error) {
+func (s *Store) ReadAggregateStream(ctx context.Context, tx pgx.Tx, aggregateType, aggregateID string, fromVersion, toVersion *int64) (store.Stream, error) {
 	if s.config.Logger != nil {
 		s.config.Logger.Debug(ctx, "reading aggregate stream",
 			"aggregate_type", aggregateType,
@@ -473,7 +440,7 @@ func (s *Store) ReadAggregateStream(ctx context.Context, tx *sql.Tx, aggregateTy
 		WHERE aggregate_type = $1 AND aggregate_id = $2
 	`, s.config.EventsTable)
 
-	var args []interface{}
+	var args []any
 	args = append(args, aggregateType, aggregateID)
 	paramIndex := 3
 
@@ -490,7 +457,7 @@ func (s *Store) ReadAggregateStream(ctx context.Context, tx *sql.Tx, aggregateTy
 
 	baseQuery += " ORDER BY aggregate_version ASC"
 
-	rows, err := tx.QueryContext(ctx, baseQuery, args...)
+	rows, err := tx.Query(ctx, baseQuery, args...)
 	if err != nil {
 		return store.Stream{}, fmt.Errorf("failed to query aggregate stream: %w", err)
 	}

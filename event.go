@@ -1,8 +1,8 @@
 package store
 
 import (
-	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,12 +22,16 @@ func (ns *NullString) Scan(value interface{}) error {
 		ns.String, ns.Valid = "", false
 		return nil
 	}
-	var s sql.NullString
-	if err := s.Scan(value); err != nil {
-		return err
+	switch v := value.(type) {
+	case string:
+		ns.String, ns.Valid = v, true
+		return nil
+	case []byte:
+		ns.String, ns.Valid = string(v), true
+		return nil
+	default:
+		return fmt.Errorf("cannot scan %T into NullString", value)
 	}
-	ns.String, ns.Valid = s.String, s.Valid
-	return nil
 }
 
 // Value implements the driver.Valuer interface.

@@ -2,8 +2,9 @@ package consumer
 
 import (
 	"context"
-	"database/sql"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/eventsalsa/store"
 )
@@ -19,7 +20,7 @@ func (p *mockGlobalConsumer) Name() string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *mockGlobalConsumer) Handle(_ context.Context, _ *sql.Tx, event store.PersistedEvent) error {
+func (p *mockGlobalConsumer) Handle(_ context.Context, _ pgx.Tx, event store.PersistedEvent) error {
 	p.receivedEvents = append(p.receivedEvents, event)
 	return nil
 }
@@ -40,7 +41,7 @@ func (p *mockScopedConsumer) AggregateTypes() []string {
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-func (p *mockScopedConsumer) Handle(_ context.Context, _ *sql.Tx, event store.PersistedEvent) error {
+func (p *mockScopedConsumer) Handle(_ context.Context, _ pgx.Tx, event store.PersistedEvent) error {
 	p.receivedEvents = append(p.receivedEvents, event)
 	return nil
 }

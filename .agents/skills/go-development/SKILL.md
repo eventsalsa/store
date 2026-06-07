@@ -13,7 +13,7 @@ This skill defines the development guidelines and coding style conventions for i
 *   Define interfaces before implementing them. Keep them minimal and focused on single responsibilities.
 *   Place core interfaces in the root `store` package.
 *   All database operations must accept `context.Context` as the first parameter.
-*   All database operations must accept `*sql.Tx` as the second parameter (never `*sql.DB`).
+*   All database operations must accept `pgx.Tx` as the second parameter (never `*pgxpool.Pool` or connection).
 
 ### 2. Error Handling
 *   Return clear, specific sentinel errors (e.g., `store.ErrOptimisticConcurrency`, `store.ErrNoEvents`).

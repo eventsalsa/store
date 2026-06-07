@@ -12,7 +12,8 @@ package consumer
 
 import (
 	"context"
-	"database/sql"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/eventsalsa/store"
 )
@@ -47,7 +48,7 @@ type Consumer interface {
 	// so the actual payload/metadata data is not deep-copied.
 	//
 	//nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
-	Handle(ctx context.Context, tx *sql.Tx, event store.PersistedEvent) error
+	Handle(ctx context.Context, tx pgx.Tx, event store.PersistedEvent) error
 }
 
 // ScopedConsumer is an optional interface that consumers can implement to filter
@@ -70,7 +71,7 @@ type Consumer interface {
 //	   return []string{"User"}
 //	}
 //
-//	func (p *UserReadModelConsumer) Handle(ctx context.Context, tx *sql.Tx, event store.PersistedEvent) error {
+//	func (p *UserReadModelConsumer) Handle(ctx context.Context, tx pgx.Tx, event store.PersistedEvent) error {
 //	   // Only receives User aggregate events
 //	   // Use tx for atomic read model updates with checkpoint
 //	   return nil
@@ -84,7 +85,7 @@ type Consumer interface {
 //	   return "system.integration.watermill.v1"
 //	}
 //
-//	func (p *WatermillPublisher) Handle(ctx context.Context, tx *sql.Tx, event store.PersistedEvent) error {
+//	func (p *WatermillPublisher) Handle(ctx context.Context, tx pgx.Tx, event store.PersistedEvent) error {
 //	   // Receives ALL events for publishing to message broker
 //	   // Ignore tx parameter - use message broker client
 //	   _ = tx
