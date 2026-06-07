@@ -82,10 +82,31 @@ func getTestDB(t *testing.T) testDB {
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
 
+	config, err := pgxpool.ParseConfig(connStr)
+	if err != nil {
+		t.Fatalf("Failed to parse connection string: %v", err)
+	}
+
+	if os.Getenv("PGX_TEST_SIMPLE_PROTOCOL") == "true" {
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	}
+	switch os.Getenv("PGX_TEST_QUERY_EXEC_MODE") {
+	case "cache_statement":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+	case "cache_describe":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
+	case "describe_exec":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeDescribeExec
+	case "exec":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+	case "simple_protocol":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, connStr)
+	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		t.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -274,7 +295,7 @@ func TestAppendEvents_OptimisticConcurrency(t *testing.T) {
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`, event2.AggregateType, event2.AggregateID, int64(1), // Use version 1 which already exists
 		event2.EventID, event2.EventType, event2.EventVersion,
-		event2.Payload, event2.Metadata, event2.CreatedAt)
+		event2.Payload, string(event2.Metadata), event2.CreatedAt)
 
 	// The insert should fail immediately with unique constraint violation
 	if err == nil {

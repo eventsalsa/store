@@ -226,6 +226,13 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 		event := &events[i]
 		aggregateVersion := nextVersion + int64(i)
 
+		// Convert metadata []byte to string or nil to ensure compatibility with
+		// pgx's simple protocol mode (useful for pg_bouncer transaction mode).
+		var metadata any
+		if len(event.Metadata) > 0 {
+			metadata = string(event.Metadata)
+		}
+
 		var globalPos int64
 		err = tx.QueryRow(ctx, insertQuery,
 			event.AggregateType,
@@ -238,7 +245,7 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 			event.TraceID,
 			event.CorrelationID,
 			event.CausationID,
-			event.Metadata,
+			metadata,
 			event.CreatedAt,
 		).Scan(&globalPos)
 
