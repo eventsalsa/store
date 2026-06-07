@@ -90,6 +90,18 @@ func getTestDB(t *testing.T) testDB {
 	if os.Getenv("PGX_TEST_SIMPLE_PROTOCOL") == "true" {
 		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 	}
+	switch os.Getenv("PGX_TEST_QUERY_EXEC_MODE") {
+	case "cache_statement":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+	case "cache_describe":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
+	case "describe_exec":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeDescribeExec
+	case "exec":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+	case "simple_protocol":
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
