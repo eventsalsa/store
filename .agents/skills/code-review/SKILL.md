@@ -23,7 +23,7 @@ Agentic coding can leave behind artifacts. Ensure the following are removed if n
 
 ### 3. Correctness & Security
 *   **SQL Safety**: Ensure all queries are parameterized to prevent SQL injection. Check for proper indexing.
-*   **Transaction Boundaries**: Ensure the library does not call `Commit()` or `Rollback()` directly on `*sql.Tx` (callers control boundaries).
+*   **Transaction Boundaries**: Ensure the library does not call `Commit()` or `Rollback()` directly on `pgx.Tx` (callers control boundaries).
 *   **Concurrency**: Ensure shared mutable state is guarded against race conditions.
 
 ### 4. API Quality

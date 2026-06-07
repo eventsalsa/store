@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/eventsalsa/store"
 	v1 "github.com/eventsalsa/store/examples/eventmap-codegen/domain/user/events/v1"
@@ -27,7 +28,7 @@ func (p *UserProjection) Name() string {
 // Handle demonstrates the recommended pattern for using FromESEvent in projections.
 // This allows you to work with strongly-typed domain events instead of raw persisted events.
 // nolint:gocritic // it's fine
-func (p *UserProjection) Handle(_ context.Context, _ *sql.Tx, event store.PersistedEvent) error {
+func (p *UserProjection) Handle(_ context.Context, _ pgx.Tx, event store.PersistedEvent) error {
 	// Convert the persisted event to a domain event using the generated FromESEvent function
 	domainEvent, err := persistence.FromESEvent(event)
 	if err != nil {

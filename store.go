@@ -2,8 +2,9 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -43,7 +44,7 @@ type EventStore interface {
 	// - Use result.ToVersion() to get the new aggregate version
 	// - Use result.Events to access the persisted events with all fields populated
 	// - Use result.GlobalPositions to get the assigned global positions
-	Append(ctx context.Context, tx *sql.Tx, expectedVersion ExpectedVersion, events []Event) (AppendResult, error)
+	Append(ctx context.Context, tx pgx.Tx, expectedVersion ExpectedVersion, events []Event) (AppendResult, error)
 }
 
 // EventReader defines the interface for reading events sequentially.
@@ -58,7 +59,7 @@ type EventReader interface {
 	// in-flight gaps can permanently skip events. Async consumers must use a
 	// gap-aware runtime; do not treat the highest returned position as a safe
 	// checkpoint frontier under concurrent writers.
-	ReadEvents(ctx context.Context, tx *sql.Tx, fromPosition int64, limit int) ([]PersistedEvent, error)
+	ReadEvents(ctx context.Context, tx pgx.Tx, fromPosition int64, limit int) ([]PersistedEvent, error)
 }
 
 // GlobalPositionReader defines the interface for reading the latest global event position.
@@ -71,7 +72,7 @@ type GlobalPositionReader interface {
 	// checkpoint frontier under concurrent writers. A concurrent transaction holding a lower
 	// position may commit after this call returns, making that position invisible to any
 	// consumer that has already advanced its checkpoint past it.
-	GetLatestGlobalPosition(ctx context.Context, tx *sql.Tx) (int64, error)
+	GetLatestGlobalPosition(ctx context.Context, tx pgx.Tx) (int64, error)
 }
 
 // AggregateStreamReader defines the interface for reading events for a specific aggregate.
@@ -95,5 +96,5 @@ type AggregateStreamReader interface {
 	// Returns a Stream with an empty Events slice if no events match the criteria.
 	// Use stream.Version() to get the current aggregate version.
 	// Use stream.IsEmpty() to check if any events were found.
-	ReadAggregateStream(ctx context.Context, tx *sql.Tx, aggregateType string, aggregateID string, fromVersion, toVersion *int64) (Stream, error)
+	ReadAggregateStream(ctx context.Context, tx pgx.Tx, aggregateType string, aggregateID string, fromVersion, toVersion *int64) (Stream, error)
 }

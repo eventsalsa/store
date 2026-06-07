@@ -9,7 +9,7 @@ This document defines the architecture, conventions, workflows, and skills used 
 ### Core Concepts
 
 *   **Clean Architecture**: Core interfaces are defined in the root `store` package, independent of any specific database driver.
-*   **Caller-Controlled Transactions**: All store methods accept `*sql.Tx` directly. Callers begin transactions and control commit/rollback boundaries; the library never commits or rolls back.
+*   **Caller-Controlled Transactions**: All store methods accept `pgx.Tx` directly. Callers begin transactions and control commit/rollback boundaries; the library never commits or rolls back.
 *   **Optimistic Concurrency**: Built-in version conflict detection via database constraints and the `aggregate_heads` table.
 *   **Immutable Events**: `Event` is a value object before persistence; `PersistedEvent` is the immutable record returned after storage.
 *   **Pull-Based Consumers**: Sequential event processing by global position using named, checkpointed consumers.
@@ -90,7 +90,7 @@ events := []store.Event{
 }
 
 // Caller controls the transaction boundary
-tx, err := db.BeginTx(ctx, nil)
+tx, err := db.Begin(ctx)
 if err != nil {
     return err
 }
@@ -98,11 +98,11 @@ if err != nil {
 // NoStream() enforces the aggregate must not already exist
 result, err := eventStore.Append(ctx, tx, store.NoStream(), events)
 if err != nil {
-    tx.Rollback()
+    tx.Rollback(ctx)
     return err
 }
 
-if err := tx.Commit(); err != nil {
+if err := tx.Commit(ctx); err != nil {
     return err
 }
 
