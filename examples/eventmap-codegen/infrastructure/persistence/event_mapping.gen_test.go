@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/eventsalsa/store"
+	"github.com/google/uuid"
 
 	v1 "github.com/eventsalsa/store/examples/eventmap-codegen/domain/user/events/v1"
 	v2 "github.com/eventsalsa/store/examples/eventmap-codegen/domain/user/events/v2"

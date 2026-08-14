@@ -3,6 +3,7 @@ package eventmap
 import (
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -248,16 +249,29 @@ func (g *Generator) Generate() error {
 	// Generate code
 	code := g.generateCode()
 
+	// Format generated code using go/format
+	formattedCode, err := format.Source([]byte(code))
+	if err != nil {
+		return fmt.Errorf("failed to format generated code: %w", err)
+	}
+
 	// Write to file
 	outputPath := filepath.Join(g.config.OutputDir, g.config.OutputFile)
-	if err := os.WriteFile(outputPath, []byte(code), 0o600); err != nil {
+	if err := os.WriteFile(outputPath, formattedCode, 0o600); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
 	// Generate test file
 	testCode := g.generateTestCode()
+
+	// Format generated test code using go/format
+	formattedTestCode, err := format.Source([]byte(testCode))
+	if err != nil {
+		return fmt.Errorf("failed to format generated test code: %w", err)
+	}
+
 	testOutputPath := filepath.Join(g.config.OutputDir, g.getTestFileName())
-	if err := os.WriteFile(testOutputPath, []byte(testCode), 0o600); err != nil {
+	if err := os.WriteFile(testOutputPath, formattedTestCode, 0o600); err != nil {
 		return fmt.Errorf("failed to write test file: %w", err)
 	}
 
