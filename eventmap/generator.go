@@ -525,8 +525,20 @@ func FromESEvent(pe store.PersistedEvent) (any, error) {
 		eventsByType[event.Name] = append(eventsByType[event.Name], event)
 	}
 
+	// Sort event types for deterministic output
+	eventTypes := make([]string, 0, len(eventsByType))
+	for eventType := range eventsByType {
+		eventTypes = append(eventTypes, eventType)
+	}
+	sort.Strings(eventTypes)
+
 	// Generate switch cases for each event type
-	for eventType, versions := range eventsByType {
+	for _, eventType := range eventTypes {
+		versions := eventsByType[eventType]
+		sort.Slice(versions, func(i, j int) bool {
+			return versions[i].Version < versions[j].Version
+		})
+
 		fmt.Fprintf(&sb, "\tcase %q:\n", eventType)
 		sb.WriteString("\t\tswitch pe.EventVersion {\n")
 

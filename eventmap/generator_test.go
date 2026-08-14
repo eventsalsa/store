@@ -205,8 +205,80 @@ func TestGenerator_GenerateNoEvents(t *testing.T) {
 	}
 }
 
+func TestGenerator_DeterministicOutput(t *testing.T) {
+	config := Config{
+		OutputFile:  "event_mapping.gen.go",
+		PackageName: "generated",
+	}
+
+	gen := NewGenerator(&config)
+	gen.events = []EventInfo{
+		{Name: "UserRegistered", PackageName: "v2", Version: 2},
+		{Name: "OrderCreated", PackageName: "v1", Version: 1},
+		{Name: "UserRegistered", PackageName: "v1", Version: 1},
+		{Name: "AccountSuspended", PackageName: "v1", Version: 1},
+		{Name: "OrderCancelled", PackageName: "v1", Version: 1},
+		{Name: "PaymentReceived", PackageName: "v1", Version: 1},
+		{Name: "AccountSuspended", PackageName: "v2", Version: 2},
+		{Name: "CustomerOnboarded", PackageName: "v1", Version: 1},
+	}
+
+	// Sort events as Discover/Generate does
+	sortEvents(gen.events)
+
+	// Baseline generation
+	baseline := gen.generateCode()
+
+	// Verify switch case order in FromESEvent is strictly sorted alphabetically
+	expectedOrder := []string{
+		`case "AccountSuspended":`,
+		`case "CustomerOnboarded":`,
+		`case "OrderCancelled":`,
+		`case "OrderCreated":`,
+		`case "PaymentReceived":`,
+		`case "UserRegistered":`,
+	}
+
+	fromESEventIdx := strings.Index(baseline, "func FromESEvent(pe store.PersistedEvent)")
+	if fromESEventIdx == -1 {
+		t.Fatal("FromESEvent not found in generated code")
+	}
+	fromESEventCode := baseline[fromESEventIdx:]
+
+	lastPos := 0
+	for _, caseStr := range expectedOrder {
+		pos := strings.Index(fromESEventCode, caseStr)
+		if pos == -1 {
+			t.Fatalf("expected switch case %s in FromESEvent", caseStr)
+		}
+		if pos < lastPos {
+			t.Fatalf("switch case %s out of order; pos %d < lastPos %d", caseStr, pos, lastPos)
+		}
+		lastPos = pos
+	}
+
+	// Run repeatedly to verify deterministic output across runs
+	for i := 0; i < 50; i++ {
+		code := gen.generateCode()
+		if code != baseline {
+			t.Fatalf("run %d produced non-deterministic code output", i)
+		}
+	}
+}
+
+func sortEvents(events []EventInfo) {
+	for i := 0; i < len(events); i++ {
+		for j := i + 1; j < len(events); j++ {
+			if events[i].Name > events[j].Name || (events[i].Name == events[j].Name && events[i].Version > events[j].Version) {
+				events[i], events[j] = events[j], events[i]
+			}
+		}
+	}
+}
+
 func TestGenerator_TypeToString(t *testing.T) {
 	// This is tested implicitly through the Discover test,
 	// but we can add explicit tests if needed
 	t.Skip("Tested implicitly through integration tests")
 }
+
