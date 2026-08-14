@@ -3,6 +3,7 @@ package eventmap
 import (
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -248,16 +249,29 @@ func (g *Generator) Generate() error {
 	// Generate code
 	code := g.generateCode()
 
+	// Format generated code using go/format
+	formattedCode, err := format.Source([]byte(code))
+	if err != nil {
+		return fmt.Errorf("failed to format generated code: %w", err)
+	}
+
 	// Write to file
 	outputPath := filepath.Join(g.config.OutputDir, g.config.OutputFile)
-	if err := os.WriteFile(outputPath, []byte(code), 0o600); err != nil {
+	if err = os.WriteFile(outputPath, formattedCode, 0o600); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
 	// Generate test file
 	testCode := g.generateTestCode()
+
+	// Format generated test code using go/format
+	formattedTestCode, err := format.Source([]byte(testCode))
+	if err != nil {
+		return fmt.Errorf("failed to format generated test code: %w", err)
+	}
+
 	testOutputPath := filepath.Join(g.config.OutputDir, g.getTestFileName())
-	if err := os.WriteFile(testOutputPath, []byte(testCode), 0o600); err != nil {
+	if err = os.WriteFile(testOutputPath, formattedTestCode, 0o600); err != nil {
 		return fmt.Errorf("failed to write test file: %w", err)
 	}
 
@@ -525,8 +539,20 @@ func FromESEvent(pe store.PersistedEvent) (any, error) {
 		eventsByType[event.Name] = append(eventsByType[event.Name], event)
 	}
 
+	// Sort event types for deterministic output
+	eventTypes := make([]string, 0, len(eventsByType))
+	for eventType := range eventsByType {
+		eventTypes = append(eventTypes, eventType)
+	}
+	sort.Strings(eventTypes)
+
 	// Generate switch cases for each event type
-	for eventType, versions := range eventsByType {
+	for _, eventType := range eventTypes {
+		versions := eventsByType[eventType]
+		sort.Slice(versions, func(i, j int) bool {
+			return versions[i].Version < versions[j].Version
+		})
+
 		fmt.Fprintf(&sb, "\tcase %q:\n", eventType)
 		sb.WriteString("\t\tswitch pe.EventVersion {\n")
 
