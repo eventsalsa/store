@@ -281,4 +281,3 @@ func TestGenerator_TypeToString(t *testing.T) {
 	// but we can add explicit tests if needed
 	t.Skip("Tested implicitly through integration tests")
 }
-

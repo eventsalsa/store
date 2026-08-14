@@ -257,7 +257,7 @@ func (g *Generator) Generate() error {
 
 	// Write to file
 	outputPath := filepath.Join(g.config.OutputDir, g.config.OutputFile)
-	if err := os.WriteFile(outputPath, formattedCode, 0o600); err != nil {
+	if err = os.WriteFile(outputPath, formattedCode, 0o600); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
@@ -271,7 +271,7 @@ func (g *Generator) Generate() error {
 	}
 
 	testOutputPath := filepath.Join(g.config.OutputDir, g.getTestFileName())
-	if err := os.WriteFile(testOutputPath, formattedTestCode, 0o600); err != nil {
+	if err = os.WriteFile(testOutputPath, formattedTestCode, 0o600); err != nil {
 		return fmt.Errorf("failed to write test file: %w", err)
 	}
 
