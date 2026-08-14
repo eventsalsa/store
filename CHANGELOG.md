@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.4](https://github.com/eventsalsa/store/compare/v0.0.3...v0.0.4) (2026-08-14)
+
+
+### Bug Fixes
+
+* **eventmap:** ensure deterministic FromESEvent switch cases and gofmt output ([#4](https://github.com/eventsalsa/store/issues/4)) ([aa4e6af](https://github.com/eventsalsa/store/commit/aa4e6af3b98d8b1c7b9392309839301075f430a2))
+
 ## [0.0.3](https://github.com/eventsalsa/store/compare/v0.0.2...v0.0.3) (2026-06-07)
 
 ### Bug Fixes
