@@ -48,10 +48,6 @@ type PartitionConfig struct {
 	// PartmanMaintenance specifies the automated maintenance mechanism for pg_partman (none, bgw, pg_cron).
 	PartmanMaintenance PartmanMaintenance
 
-	// EventIDsTable is the name of the companion table for preserving global event_id uniqueness.
-	// Defaults to "event_ids". If empty, companion table generation is skipped.
-	EventIDsTable string
-
 	// PartitionSize is the number of global_position sequence values per partition (e.g. 10_000_000).
 	// Defaults to 10,000,000 when partitioning is enabled.
 	PartitionSize int64
@@ -93,7 +89,6 @@ func DefaultConfig() Config {
 			InitialPartitions:  4,
 			PartmanSchema:      "partman",
 			PartmanMaintenance: PartmanMaintenanceNone,
-			EventIDsTable:      "event_ids",
 		},
 	}
 }
@@ -236,17 +231,6 @@ CREATE TABLE IF NOT EXISTS %s (
 		config.EventsTable,
 	)
 
-	if config.Partitioning.EventIDsTable != "" {
-		fmt.Fprintf(&sb, `
--- Companion table for global event_id uniqueness across partitions
-CREATE TABLE IF NOT EXISTS %s (
-    event_id UUID PRIMARY KEY,
-    global_position BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-`, config.Partitioning.EventIDsTable)
-	}
-
 	sb.WriteString("\n-- Pre-allocated initial partitions\n")
 	for p := 0; p < initialPartitions; p++ {
 		fromPos := int64(p)*partitionSize + 1
@@ -352,17 +336,6 @@ CREATE TABLE IF NOT EXISTS %s (
 		config.EventsTable,
 		config.EventsTable,
 	)
-
-	if config.Partitioning.EventIDsTable != "" {
-		fmt.Fprintf(&sb, `
--- Companion table for global event_id uniqueness across partitions
-CREATE TABLE IF NOT EXISTS %s (
-    event_id UUID PRIMARY KEY,
-    global_position BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-`, config.Partitioning.EventIDsTable)
-	}
 
 	fmt.Fprintf(&sb, `
 -- Indexes on parent table (automatically applied to child partitions)

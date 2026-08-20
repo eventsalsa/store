@@ -480,7 +480,7 @@ func TestConcurrent_MixedCommitAndRollback(t *testing.T) {
 
 	for i := 0; i < totalGoroutines; i++ {
 		wg.Add(1)
-		shouldRollback := (i % 2 == 0) // alternate rollback and commit
+		shouldRollback := (i%2 == 0) // alternate rollback and commit
 
 		go func(idx int, rollback bool) {
 			defer wg.Done()

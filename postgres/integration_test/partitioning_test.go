@@ -24,7 +24,6 @@ func setupPartitionedTestTables(t *testing.T, db testDB, partitionSize int64, in
 	// Drop existing objects
 	_, err := db.Exec(ctx, `
 		DROP TABLE IF EXISTS stream_heads CASCADE;
-		DROP TABLE IF EXISTS event_ids CASCADE;
 		DROP TABLE IF EXISTS events CASCADE;
 		DROP SEQUENCE IF EXISTS events_global_position_seq CASCADE;
 	`)
@@ -42,7 +41,6 @@ func setupPartitionedTestTables(t *testing.T, db testDB, partitionSize int64, in
 			Strategy:          migrations.PartitionStrategyNative,
 			PartitionSize:     partitionSize,
 			InitialPartitions: initialPartitions,
-			EventIDsTable:     "event_ids",
 		},
 	}
 
@@ -71,9 +69,7 @@ func TestPartitioned_BoundaryCrossing(t *testing.T) {
 	setupPartitionedTestTables(t, db, 5, 3)
 
 	ctx := context.Background()
-	pgStore := postgres.NewStore(postgres.NewStoreConfig(
-		postgres.WithEventIDsTable("event_ids"),
-	))
+	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	streamID := uuid.New().String()
 	streamType := "Order"
@@ -152,9 +148,7 @@ func TestPartitioned_BatchStraddlingBoundary(t *testing.T) {
 	setupPartitionedTestTables(t, db, 5, 3)
 
 	ctx := context.Background()
-	pgStore := postgres.NewStore(postgres.NewStoreConfig(
-		postgres.WithEventIDsTable("event_ids"),
-	))
+	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	streamID := uuid.New().String()
 	streamType := "Shipment"
@@ -230,9 +224,7 @@ func TestPartitioned_ReadStream_AcrossPartitions(t *testing.T) {
 	setupPartitionedTestTables(t, db, 5, 3)
 
 	ctx := context.Background()
-	pgStore := postgres.NewStore(postgres.NewStoreConfig(
-		postgres.WithEventIDsTable("event_ids"),
-	))
+	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	streamID := uuid.New().String()
 	streamType := "UserProfile"
@@ -311,9 +303,7 @@ func TestPartitioned_ReadEvents_Pagination(t *testing.T) {
 	setupPartitionedTestTables(t, db, 5, 3)
 
 	ctx := context.Background()
-	pgStore := postgres.NewStore(postgres.NewStoreConfig(
-		postgres.WithEventIDsTable("event_ids"),
-	))
+	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	streamType := "Feed"
 	totalEvents := 15
@@ -379,9 +369,7 @@ func TestPartitioned_GetLatestGlobalPosition(t *testing.T) {
 	setupPartitionedTestTables(t, db, 5, 3)
 
 	ctx := context.Background()
-	pgStore := postgres.NewStore(postgres.NewStoreConfig(
-		postgres.WithEventIDsTable("event_ids"),
-	))
+	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	txRead, _ := db.BeginTx(ctx, nil)
 	pos0, err := pgStore.GetLatestGlobalPosition(ctx, txRead)
@@ -424,76 +412,6 @@ func TestPartitioned_GetLatestGlobalPosition(t *testing.T) {
 	}
 }
 
-// TestPartitioned_EventID_Uniqueness verifies that the companion event_ids table prevents
-// duplicate event UUIDs across distinct partitions.
-func TestPartitioned_EventID_Uniqueness(t *testing.T) {
-	db := getTestDB(t)
-	defer db.Close()
-
-	// 5 events per partition, 3 partitions
-	setupPartitionedTestTables(t, db, 5, 3)
-
-	ctx := context.Background()
-	pgStore := postgres.NewStore(postgres.NewStoreConfig(
-		postgres.WithEventIDsTable("event_ids"),
-	))
-
-	duplicateUUID := uuid.New()
-
-	// Event 1 in partition 1 (pos 1)
-	event1 := store.Event{
-		StreamType:   "User",
-		StreamID:     "u1",
-		EventID:      duplicateUUID,
-		EventType:    "UserRegistered",
-		EventVersion: 1,
-		Payload:      []byte(`{}`),
-		CreatedAt:    time.Now(),
-	}
-
-	tx1, _ := db.BeginTx(ctx, nil)
-	_, err := pgStore.Append(ctx, tx1, store.NoStream(), []store.Event{event1})
-	if err != nil {
-		t.Fatalf("First append with UUID failed: %v", err)
-	}
-	_ = tx1.Commit(ctx)
-
-	// Append 5 more events to push global_position into partition 2 (positions 2..6)
-	for i := 0; i < 5; i++ {
-		e := store.Event{
-			StreamType:   "Other",
-			StreamID:     uuid.New().String(),
-			EventID:      uuid.New(),
-			EventType:    "OtherEvent",
-			EventVersion: 1,
-			Payload:      []byte(`{}`),
-			CreatedAt:    time.Now(),
-		}
-		tx, _ := db.BeginTx(ctx, nil)
-		_, _ = pgStore.Append(ctx, tx, store.NoStream(), []store.Event{e})
-		_ = tx.Commit(ctx)
-	}
-
-	// Attempt to append duplicate UUID in partition 2
-	duplicateEvent := store.Event{
-		StreamType:   "User",
-		StreamID:     "u2",
-		EventID:      duplicateUUID,
-		EventType:    "UserRegistered",
-		EventVersion: 1,
-		Payload:      []byte(`{}`),
-		CreatedAt:    time.Now(),
-	}
-
-	tx2, _ := db.BeginTx(ctx, nil)
-	_, err = pgStore.Append(ctx, tx2, store.NoStream(), []store.Event{duplicateEvent})
-	if err == nil {
-		_ = tx2.Commit(ctx)
-		t.Fatal("Expected duplicate event ID append to fail across partition boundaries, but it succeeded")
-	}
-	_ = tx2.Rollback(ctx)
-}
-
 // TestPartitioned_MissingPartition_Error verifies proper error reporting when an append
 // attempts to write beyond available partition ranges.
 func TestPartitioned_MissingPartition_Error(t *testing.T) {
@@ -504,9 +422,7 @@ func TestPartitioned_MissingPartition_Error(t *testing.T) {
 	setupPartitionedTestTables(t, db, 5, 1)
 
 	ctx := context.Background()
-	pgStore := postgres.NewStore(postgres.NewStoreConfig(
-		postgres.WithEventIDsTable("event_ids"),
-	))
+	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	// Append 5 events (fills partition 1)
 	var events []store.Event

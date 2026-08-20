@@ -138,7 +138,6 @@ func TestGeneratePostgres_NativePartitioning(t *testing.T) {
 			Strategy:          PartitionStrategyNative,
 			PartitionSize:     1000,
 			InitialPartitions: 3,
-			EventIDsTable:     "event_ids",
 		},
 	}
 
@@ -163,11 +162,6 @@ func TestGeneratePostgres_NativePartitioning(t *testing.T) {
 	// Check partitioned table definition
 	if !strings.Contains(sql, "PARTITION BY RANGE (global_position)") {
 		t.Error("Missing PARTITION BY RANGE (global_position)")
-	}
-
-	// Check companion table
-	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS event_ids") {
-		t.Error("Missing event_ids companion table")
 	}
 
 	// Check initial partitions
@@ -203,7 +197,6 @@ func TestGeneratePostgres_Partman_PgCron(t *testing.T) {
 			InitialPartitions:  6,
 			PartmanSchema:      "partman",
 			PartmanMaintenance: PartmanMaintenancePgCron,
-			EventIDsTable:      "event_ids",
 		},
 	}
 
@@ -259,7 +252,6 @@ func TestGeneratePostgres_Partman_BGW(t *testing.T) {
 			InitialPartitions:  4,
 			PartmanSchema:      "partman",
 			PartmanMaintenance: PartmanMaintenanceBGW,
-			EventIDsTable:      "event_ids",
 		},
 	}
 
@@ -298,7 +290,6 @@ func TestGeneratePostgres_Partman_Manual(t *testing.T) {
 			InitialPartitions:  4,
 			PartmanSchema:      "partman",
 			PartmanMaintenance: PartmanMaintenanceNone,
-			EventIDsTable:      "event_ids",
 		},
 	}
 

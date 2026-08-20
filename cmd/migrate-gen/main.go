@@ -28,7 +28,6 @@ func main() {
 		initialPartitions  = flag.Int("initial-partitions", 4, "Number of initial partitions to generate or premake")
 		partmanSchema      = flag.String("partman-schema", "partman", "Schema where pg_partman is installed")
 		partmanMaintenance = flag.String("partman-maintenance", "none", "pg_partman maintenance mode: none, bgw, pg_cron")
-		eventIDsTable      = flag.String("event-ids-table", "event_ids", "Name of companion table for global event_id uniqueness")
 	)
 
 	flag.Parse()
@@ -42,7 +41,6 @@ func main() {
 	config.Partitioning.InitialPartitions = *initialPartitions
 	config.Partitioning.PartmanSchema = *partmanSchema
 	config.Partitioning.PartmanMaintenance = migrations.PartmanMaintenance(*partmanMaintenance)
-	config.Partitioning.EventIDsTable = *eventIDsTable
 
 	if *outputFilename != "" {
 		config.OutputFilename = *outputFilename
