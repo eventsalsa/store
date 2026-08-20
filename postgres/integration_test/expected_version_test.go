@@ -13,7 +13,7 @@ import (
 	"github.com/eventsalsa/store/postgres"
 )
 
-// TestExpectedVersion_NoStream tests that NoStream() enforces aggregate doesn't exist
+// TestExpectedVersion_NoStream tests that NoStream() enforces stream doesn't exist
 func TestExpectedVersion_NoStream(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
@@ -23,17 +23,17 @@ func TestExpectedVersion_NoStream(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 
 	event := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventCreated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
 	// First append with NoStream() should succeed
@@ -46,7 +46,7 @@ func TestExpectedVersion_NoStream(t *testing.T) {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 
-	// Second append with NoStream() should fail (aggregate already exists)
+	// Second append with NoStream() should fail (stream already exists)
 	event2 := event
 	event2.EventID = uuid.New()
 	event2.EventType = "TestEventUpdated"
@@ -69,18 +69,18 @@ func TestExpectedVersion_Exact(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 
-	// Create aggregate with version 1
+	// Create stream with version 1
 	event1 := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventCreated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
 	tx1, _ := db.BeginTx(ctx, nil)
@@ -94,14 +94,14 @@ func TestExpectedVersion_Exact(t *testing.T) {
 
 	// Append with Exact(1) should succeed
 	event2 := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventUpdated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventUpdated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
 	tx2, _ := db.BeginTx(ctx, nil)
@@ -115,14 +115,14 @@ func TestExpectedVersion_Exact(t *testing.T) {
 
 	// Append with Exact(1) should now fail (version is now 2)
 	event3 := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventUpdated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventUpdated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
 	tx3, _ := db.BeginTx(ctx, nil)
@@ -143,7 +143,7 @@ func TestExpectedVersion_Exact(t *testing.T) {
 	}
 }
 
-// TestExpectedVersion_Exact_NonExistent tests that Exact(N) fails for non-existent aggregates
+// TestExpectedVersion_Exact_NonExistent tests that Exact(N) fails for non-existent streams
 func TestExpectedVersion_Exact_NonExistent(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
@@ -153,29 +153,29 @@ func TestExpectedVersion_Exact_NonExistent(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 
 	event := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventCreated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
-	// Append with Exact(1) should fail (aggregate doesn't exist)
+	// Append with Exact(1) should fail (stream doesn't exist)
 	tx, _ := db.BeginTx(ctx, nil)
 	_, err := pgStore.Append(ctx, tx, store.Exact(1), []store.Event{event})
 	if err != store.ErrOptimisticConcurrency {
-		t.Fatalf("Append with Exact(1) on non-existent aggregate should fail with ErrOptimisticConcurrency, got: %v", err)
+		t.Fatalf("Append with Exact(1) on non-existent stream should fail with ErrOptimisticConcurrency, got: %v", err)
 	}
 	tx.Rollback(ctx)
 }
 
-// TestExpectedVersion_Exact_Zero tests that Exact(0) can be used to create new aggregates
+// TestExpectedVersion_Exact_Zero tests that Exact(0) can be used to create new streams
 func TestExpectedVersion_Exact_Zero(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
@@ -185,20 +185,20 @@ func TestExpectedVersion_Exact_Zero(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 
 	event := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventCreated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
-	// Append with Exact(0) should succeed when aggregate is at version 0 (new aggregate)
+	// Append with Exact(0) should succeed when stream is at version 0 (new stream)
 	tx1, _ := db.BeginTx(ctx, nil)
 	result, err := pgStore.Append(ctx, tx1, store.Exact(0), []store.Event{event})
 	if err != nil {
@@ -208,12 +208,12 @@ func TestExpectedVersion_Exact_Zero(t *testing.T) {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 
-	// Verify aggregate now has version 1
+	// Verify stream now has version 1
 	if result.ToVersion() != 1 {
 		t.Errorf("Expected version 1 after first append, got %d", result.ToVersion())
 	}
 
-	// Append with Exact(0) should now fail (aggregate is at version 1, not 0)
+	// Append with Exact(0) should now fail (stream is at version 1, not 0)
 	event2 := event
 	event2.EventID = uuid.New()
 	event2.EventType = "TestEventUpdated"
@@ -236,18 +236,18 @@ func TestExpectedVersion_Any(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 
-	// First append with Any() on new aggregate should succeed
+	// First append with Any() on new stream should succeed
 	event1 := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventCreated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
 	tx1, _ := db.BeginTx(ctx, nil)
@@ -259,16 +259,16 @@ func TestExpectedVersion_Any(t *testing.T) {
 		t.Fatalf("Failed to commit: %v", err)
 	}
 
-	// Second append with Any() on existing aggregate should also succeed
+	// Second append with Any() on existing stream should also succeed
 	event2 := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventUpdated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventUpdated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
 	tx2, _ := db.BeginTx(ctx, nil)
@@ -281,7 +281,7 @@ func TestExpectedVersion_Any(t *testing.T) {
 	}
 }
 
-// TestExpectedVersion_UniquenessPattern tests the reservation aggregate pattern
+// TestExpectedVersion_UniquenessPattern tests the reservation stream pattern
 func TestExpectedVersion_UniquenessPattern(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
@@ -291,18 +291,18 @@ func TestExpectedVersion_UniquenessPattern(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	// Use email as aggregate ID (reservation pattern)
+	// Use email as stream ID (reservation pattern)
 	email := "user@example.com"
 
 	event := store.Event{
-		AggregateType: "EmailReservation",
-		AggregateID:   email,
-		EventID:       uuid.New(),
-		EventType:     "EmailReserved",
-		EventVersion:  1,
-		Payload:       []byte(`{"email":"user@example.com"}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "EmailReservation",
+		StreamID:     email,
+		EventID:      uuid.New(),
+		EventType:    "EmailReserved",
+		EventVersion: 1,
+		Payload:      []byte(`{"email":"user@example.com"}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
 	// First reservation should succeed

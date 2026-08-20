@@ -22,8 +22,8 @@ type StoreConfig struct {
 	// EventsTable is the name of the events table
 	EventsTable string
 
-	// AggregateHeadsTable is the name of the aggregate version tracking table
-	AggregateHeadsTable string
+	// StreamHeadsTable is the name of the stream version tracking table
+	StreamHeadsTable string
 
 	// NotifyChannel is the Postgres NOTIFY channel name for event append notifications.
 	// When set, Append() executes pg_notify within the same transaction, so the
@@ -35,9 +35,9 @@ type StoreConfig struct {
 // DefaultStoreConfig returns the default configuration.
 func DefaultStoreConfig() *StoreConfig {
 	return &StoreConfig{
-		EventsTable:         "events",
-		AggregateHeadsTable: "aggregate_heads",
-		Logger:              nil, // No logging by default
+		EventsTable:      "events",
+		StreamHeadsTable: "stream_heads",
+		Logger:           nil, // No logging by default
 	}
 }
 
@@ -58,10 +58,10 @@ func WithEventsTable(tableName string) StoreOption {
 	}
 }
 
-// WithAggregateHeadsTable sets a custom aggregate heads table name.
-func WithAggregateHeadsTable(tableName string) StoreOption {
+// WithStreamHeadsTable sets a custom stream heads table name.
+func WithStreamHeadsTable(tableName string) StoreOption {
 	return func(c *StoreConfig) {
-		c.AggregateHeadsTable = tableName
+		c.StreamHeadsTable = tableName
 	}
 }
 
@@ -104,9 +104,9 @@ func NewStore(config *StoreConfig) *Store {
 }
 
 // Append implements store.EventStore.
-// It automatically assigns aggregate versions using the aggregate_heads table for O(1) lookup.
+// It automatically assigns stream versions using the stream_heads table for O(1) lookup.
 // The expectedVersion parameter controls optimistic concurrency validation.
-// The database constraint on (aggregate_type, aggregate_id, aggregate_version) enforces
+// The database constraint on (stream_type, stream_id, stream_version) enforces
 // optimistic concurrency as a safety net - if another transaction commits between our version
 // check and insert, the insert will fail with a unique constraint violation.
 //
@@ -122,28 +122,28 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 			"expected_version", expectedVersion.String())
 	}
 
-	// Validate all events belong to same aggregate
+	// Validate all events belong to same stream
 	firstEvent := events[0]
 	for i := range events {
 		e := &events[i]
-		if e.AggregateType != firstEvent.AggregateType {
-			return store.AppendResult{}, fmt.Errorf("event %d: aggregate type mismatch", i)
+		if e.StreamType != firstEvent.StreamType {
+			return store.AppendResult{}, fmt.Errorf("event %d: stream type mismatch", i)
 		}
-		if e.AggregateID != firstEvent.AggregateID {
-			return store.AppendResult{}, fmt.Errorf("event %d: aggregate ID mismatch", i)
+		if e.StreamID != firstEvent.StreamID {
+			return store.AppendResult{}, fmt.Errorf("event %d: stream ID mismatch", i)
 		}
 	}
 
-	// Fetch current version from aggregate_heads table
+	// Fetch current version from stream_heads table
 	var currentVersion *int64
 	//nolint:gosec // G201: table name from trusted config, not user input
 	query := fmt.Sprintf(`
-		SELECT aggregate_version 
+		SELECT stream_version 
 		FROM %s 
-		WHERE aggregate_type = $1 AND aggregate_id = $2
-	`, s.config.AggregateHeadsTable)
+		WHERE stream_type = $1 AND stream_id = $2
+	`, s.config.StreamHeadsTable)
 
-	err := tx.QueryRow(ctx, query, firstEvent.AggregateType, firstEvent.AggregateID).Scan(&currentVersion)
+	err := tx.QueryRow(ctx, query, firstEvent.StreamType, firstEvent.StreamID).Scan(&currentVersion)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return store.AppendResult{}, fmt.Errorf("failed to check current version: %w", err)
 	}
@@ -153,9 +153,9 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 		if expectedVersion.IsNoStream() {
 			if currentVersion != nil {
 				if s.config.Logger != nil {
-					s.config.Logger.Error(ctx, "expected version validation failed: aggregate already exists",
-						"aggregate_type", firstEvent.AggregateType,
-						"aggregate_id", firstEvent.AggregateID,
+					s.config.Logger.Error(ctx, "expected version validation failed: stream already exists",
+						"stream_type", firstEvent.StreamType,
+						"stream_id", firstEvent.StreamID,
 						"current_version", *currentVersion,
 						"expected_version", expectedVersion.String())
 				}
@@ -164,9 +164,9 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 		} else if expectedVersion.IsExact() {
 			if currentVersion == nil {
 				if s.config.Logger != nil {
-					s.config.Logger.Error(ctx, "expected version validation failed: aggregate does not exist",
-						"aggregate_type", firstEvent.AggregateType,
-						"aggregate_id", firstEvent.AggregateID,
+					s.config.Logger.Error(ctx, "expected version validation failed: stream does not exist",
+						"stream_type", firstEvent.StreamType,
+						"stream_id", firstEvent.StreamID,
 						"expected_version", expectedVersion.String())
 				}
 				return store.AppendResult{}, store.ErrOptimisticConcurrency
@@ -174,8 +174,8 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 			if *currentVersion != expectedVersion.Value() {
 				if s.config.Logger != nil {
 					s.config.Logger.Error(ctx, "expected version validation failed: version mismatch",
-						"aggregate_type", firstEvent.AggregateType,
-						"aggregate_id", firstEvent.AggregateID,
+						"stream_type", firstEvent.StreamType,
+						"stream_id", firstEvent.StreamID,
 						"current_version", *currentVersion,
 						"expected_version", expectedVersion.String())
 				}
@@ -195,14 +195,14 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 	if s.config.Logger != nil {
 		if currentVersion != nil {
 			s.config.Logger.Debug(ctx, "version calculated",
-				"aggregate_type", firstEvent.AggregateType,
-				"aggregate_id", firstEvent.AggregateID,
+				"stream_type", firstEvent.StreamType,
+				"stream_id", firstEvent.StreamID,
 				"current_version", *currentVersion,
 				"next_version", nextVersion)
 		} else {
 			s.config.Logger.Debug(ctx, "version calculated",
-				"aggregate_type", firstEvent.AggregateType,
-				"aggregate_id", firstEvent.AggregateID,
+				"stream_type", firstEvent.StreamType,
+				"stream_id", firstEvent.StreamID,
 				"current_version", "none",
 				"next_version", nextVersion)
 		}
@@ -214,7 +214,7 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 	//nolint:gosec // G201: table name from trusted config, not user input
 	insertQuery := fmt.Sprintf(`
 		INSERT INTO %s (
-			aggregate_type, aggregate_id, aggregate_version,
+			stream_type, stream_id, stream_version,
 			event_id, event_type, event_version,
 			payload, trace_id, correlation_id, causation_id,
 			metadata, created_at
@@ -224,7 +224,7 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 
 	for i := range events {
 		event := &events[i]
-		aggregateVersion := nextVersion + int64(i)
+		streamVersion := nextVersion + int64(i)
 
 		// Convert metadata []byte to string or nil to ensure compatibility with
 		// pgx's simple protocol mode (useful for pg_bouncer transaction mode).
@@ -235,9 +235,9 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 
 		var globalPos int64
 		err = tx.QueryRow(ctx, insertQuery,
-			event.AggregateType,
-			event.AggregateID,
-			aggregateVersion,
+			event.StreamType,
+			event.StreamID,
+			streamVersion,
 			event.EventID,
 			event.EventType,
 			event.EventVersion,
@@ -253,9 +253,9 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 			if IsUniqueViolation(err) {
 				if s.config.Logger != nil {
 					s.config.Logger.Error(ctx, "optimistic concurrency conflict",
-						"aggregate_type", event.AggregateType,
-						"aggregate_id", event.AggregateID,
-						"aggregate_version", aggregateVersion)
+						"stream_type", event.StreamType,
+						"stream_id", event.StreamID,
+						"stream_version", streamVersion)
 				}
 				return store.AppendResult{}, store.ErrOptimisticConcurrency
 			}
@@ -264,35 +264,35 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 		globalPositions[i] = globalPos
 
 		persistedEvents[i] = store.PersistedEvent{
-			GlobalPosition:   globalPos,
-			AggregateType:    event.AggregateType,
-			AggregateID:      event.AggregateID,
-			AggregateVersion: aggregateVersion,
-			EventID:          event.EventID,
-			EventType:        event.EventType,
-			EventVersion:     event.EventVersion,
-			Payload:          event.Payload,
-			TraceID:          event.TraceID,
-			CorrelationID:    event.CorrelationID,
-			CausationID:      event.CausationID,
-			Metadata:         event.Metadata,
-			CreatedAt:        event.CreatedAt,
+			GlobalPosition: globalPos,
+			StreamType:     event.StreamType,
+			StreamID:       event.StreamID,
+			StreamVersion:  streamVersion,
+			EventID:        event.EventID,
+			EventType:      event.EventType,
+			EventVersion:   event.EventVersion,
+			Payload:        event.Payload,
+			TraceID:        event.TraceID,
+			CorrelationID:  event.CorrelationID,
+			CausationID:    event.CausationID,
+			Metadata:       event.Metadata,
+			CreatedAt:      event.CreatedAt,
 		}
 	}
 
-	// Update aggregate_heads with the new version (UPSERT pattern)
+	// Update stream_heads with the new version (UPSERT pattern)
 	latestVersion := nextVersion + int64(len(events)) - 1
 	//nolint:gosec // G201: table name from trusted config, not user input
 	upsertQuery := fmt.Sprintf(`
-		INSERT INTO %s (aggregate_type, aggregate_id, aggregate_version, updated_at)
+		INSERT INTO %s (stream_type, stream_id, stream_version, updated_at)
 		VALUES ($1, $2, $3, NOW())
-		ON CONFLICT (aggregate_type, aggregate_id)
-		DO UPDATE SET aggregate_version = $3, updated_at = NOW()
-	`, s.config.AggregateHeadsTable)
+		ON CONFLICT (stream_type, stream_id)
+		DO UPDATE SET stream_version = $3, updated_at = NOW()
+	`, s.config.StreamHeadsTable)
 
-	_, err = tx.Exec(ctx, upsertQuery, firstEvent.AggregateType, firstEvent.AggregateID, latestVersion)
+	_, err = tx.Exec(ctx, upsertQuery, firstEvent.StreamType, firstEvent.StreamID, latestVersion)
 	if err != nil {
-		return store.AppendResult{}, fmt.Errorf("failed to update aggregate head: %w", err)
+		return store.AppendResult{}, fmt.Errorf("failed to update stream head: %w", err)
 	}
 
 	// Send transactional NOTIFY — fires only when the caller commits the TX
@@ -306,8 +306,8 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 
 	if s.config.Logger != nil {
 		s.config.Logger.Info(ctx, "events appended",
-			"aggregate_type", firstEvent.AggregateType,
-			"aggregate_id", firstEvent.AggregateID,
+			"stream_type", firstEvent.StreamType,
+			"stream_id", firstEvent.StreamID,
 			"event_count", len(events),
 			"version_range", fmt.Sprintf("%d-%d", nextVersion, latestVersion),
 			"positions", globalPositions)
@@ -353,9 +353,9 @@ func (s *Store) readEvents(ctx context.Context, tx pgx.Tx, fromPosition int64, l
 		var e store.PersistedEvent
 		err := rows.Scan(
 			&e.GlobalPosition,
-			&e.AggregateType,
-			&e.AggregateID,
-			&e.AggregateVersion,
+			&e.StreamType,
+			&e.StreamID,
+			&e.StreamVersion,
 			&e.EventID,
 			&e.EventType,
 			&e.EventVersion,
@@ -390,7 +390,7 @@ func buildReadEventsQuery(
 ) (query string, args []any) {
 	query = fmt.Sprintf(`
 		SELECT 
-			global_position, aggregate_type, aggregate_id, aggregate_version,
+			global_position, stream_type, stream_id, stream_version,
 			event_id, event_type, event_version,
 			payload, trace_id, correlation_id, causation_id,
 			metadata, created_at
@@ -426,12 +426,12 @@ func (s *Store) GetLatestGlobalPosition(ctx context.Context, tx pgx.Tx) (int64, 
 	return position, nil
 }
 
-// ReadAggregateStream implements store.AggregateStreamReader.
-func (s *Store) ReadAggregateStream(ctx context.Context, tx pgx.Tx, aggregateType, aggregateID string, fromVersion, toVersion *int64) (store.Stream, error) {
+// ReadStream implements store.StreamReader.
+func (s *Store) ReadStream(ctx context.Context, tx pgx.Tx, streamType, streamID string, fromVersion, toVersion *int64) (store.Stream, error) {
 	if s.config.Logger != nil {
-		s.config.Logger.Debug(ctx, "reading aggregate stream",
-			"aggregate_type", aggregateType,
-			"aggregate_id", aggregateID,
+		s.config.Logger.Debug(ctx, "reading stream",
+			"stream_type", streamType,
+			"stream_id", streamID,
 			"from_version", fromVersion,
 			"to_version", toVersion)
 	}
@@ -439,34 +439,34 @@ func (s *Store) ReadAggregateStream(ctx context.Context, tx pgx.Tx, aggregateTyp
 	//nolint:gosec // G201: table name from trusted config, not user input
 	baseQuery := fmt.Sprintf(`
 		SELECT 
-			global_position, aggregate_type, aggregate_id, aggregate_version,
+			global_position, stream_type, stream_id, stream_version,
 			event_id, event_type, event_version,
 			payload, trace_id, correlation_id, causation_id,
 			metadata, created_at
 		FROM %s
-		WHERE aggregate_type = $1 AND aggregate_id = $2
+		WHERE stream_type = $1 AND stream_id = $2
 	`, s.config.EventsTable)
 
 	var args []any
-	args = append(args, aggregateType, aggregateID)
+	args = append(args, streamType, streamID)
 	paramIndex := 3
 
 	if fromVersion != nil {
-		baseQuery += fmt.Sprintf(" AND aggregate_version >= $%d", paramIndex)
+		baseQuery += fmt.Sprintf(" AND stream_version >= $%d", paramIndex)
 		args = append(args, *fromVersion)
 		paramIndex++
 	}
 
 	if toVersion != nil {
-		baseQuery += fmt.Sprintf(" AND aggregate_version <= $%d", paramIndex)
+		baseQuery += fmt.Sprintf(" AND stream_version <= $%d", paramIndex)
 		args = append(args, *toVersion)
 	}
 
-	baseQuery += " ORDER BY aggregate_version ASC"
+	baseQuery += " ORDER BY stream_version ASC"
 
 	rows, err := tx.Query(ctx, baseQuery, args...)
 	if err != nil {
-		return store.Stream{}, fmt.Errorf("failed to query aggregate stream: %w", err)
+		return store.Stream{}, fmt.Errorf("failed to query stream: %w", err)
 	}
 	defer rows.Close()
 
@@ -475,9 +475,9 @@ func (s *Store) ReadAggregateStream(ctx context.Context, tx pgx.Tx, aggregateTyp
 		var e store.PersistedEvent
 		err := rows.Scan(
 			&e.GlobalPosition,
-			&e.AggregateType,
-			&e.AggregateID,
-			&e.AggregateVersion,
+			&e.StreamType,
+			&e.StreamID,
+			&e.StreamVersion,
 			&e.EventID,
 			&e.EventType,
 			&e.EventVersion,
@@ -499,15 +499,15 @@ func (s *Store) ReadAggregateStream(ctx context.Context, tx pgx.Tx, aggregateTyp
 	}
 
 	if s.config.Logger != nil {
-		s.config.Logger.Debug(ctx, "aggregate stream read",
-			"aggregate_type", aggregateType,
-			"aggregate_id", aggregateID,
+		s.config.Logger.Debug(ctx, "stream read",
+			"stream_type", streamType,
+			"stream_id", streamID,
 			"event_count", len(events))
 	}
 
 	return store.Stream{
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
-		Events:        events,
+		StreamType: streamType,
+		StreamID:   streamID,
+		Events:     events,
 	}, nil
 }

@@ -52,14 +52,14 @@ type Consumer interface {
 }
 
 // ScopedConsumer is an optional interface that consumers can implement to filter
-// events by aggregate type. This is useful for read model consumers that only
-// care about specific aggregate types.
+// events by stream type. This is useful for read model consumers that only
+// care about specific stream types.
 //
 // By default, consumers implementing only the Consumer interface receive all events.
 // This ensures that global consumers (e.g., integration publishers, audit logs) continue
 // to work without modification.
 //
-// Example - Read model consumer scoped to User aggregate:
+// Example - Read model consumer scoped to User stream:
 //
 //	type UserReadModelConsumer struct {}
 //
@@ -67,12 +67,12 @@ type Consumer interface {
 //	   return "user_read_model"
 //	}
 //
-//	func (p *UserReadModelConsumer) AggregateTypes() []string {
+//	func (p *UserReadModelConsumer) StreamTypes() []string {
 //	   return []string{"User"}
 //	}
 //
 //	func (p *UserReadModelConsumer) Handle(ctx context.Context, tx pgx.Tx, event store.PersistedEvent) error {
-//	   // Only receives User aggregate events
+//	   // Only receives User stream events
 //	   // Use tx for atomic read model updates with checkpoint
 //	   return nil
 //	}
@@ -93,8 +93,8 @@ type Consumer interface {
 //	}
 type ScopedConsumer interface {
 	Consumer
-	// AggregateTypes returns the list of aggregate types this consumer cares about.
-	// If empty, the consumer receives events from all aggregate types.
-	// If non-empty, only events matching one of these aggregate types are passed to Handle.
-	AggregateTypes() []string
+	// StreamTypes returns the list of stream types this consumer cares about.
+	// If empty, the consumer receives events from all stream types.
+	// If non-empty, only events matching one of these stream types are passed to Handle.
+	StreamTypes() []string
 }

@@ -72,7 +72,7 @@ func EventTypeOf(e any) (string, error) {
 // ToESEvents converts domain events to store.Event instances.
 // Each domain event is marshaled to JSON and wrapped in a store.Event.
 // The generic type T allows for type-safe event slices instead of []any.
-func ToESEvents[T any](aggregateType string, aggregateID string, events []T, opts ...Option) ([]store.Event, error) {
+func ToESEvents[T any](streamType string, streamID string, events []T, opts ...Option) ([]store.Event, error) {
 	options := &eventOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -99,8 +99,8 @@ func ToESEvents[T any](aggregateType string, aggregateID string, events []T, opt
 		version := getEventVersion(e)
 
 		event := store.Event{
-			AggregateType: aggregateType,
-			AggregateID:   aggregateID,
+			StreamType:    streamType,
+			StreamID:      streamID,
 			EventType:     eventType,
 			EventVersion:  version,
 			EventID:       uuid.New(),
@@ -207,7 +207,7 @@ func FromESEvent(pe store.PersistedEvent) (any, error) {
 }
 
 // ToUserDeletedV1 converts a domain event to a store.Event.
-func ToUserDeletedV1(aggregateType string, aggregateID string, e v1.UserDeleted, opts ...Option) (store.Event, error) {
+func ToUserDeletedV1(streamType string, streamID string, e v1.UserDeleted, opts ...Option) (store.Event, error) {
 	options := &eventOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -224,8 +224,8 @@ func ToUserDeletedV1(aggregateType string, aggregateID string, e v1.UserDeleted,
 	}
 
 	return store.Event{
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
+		StreamType:    streamType,
+		StreamID:      streamID,
 		EventType:     "UserDeleted",
 		EventVersion:  1,
 		EventID:       uuid.New(),
@@ -257,7 +257,7 @@ func FromUserDeletedV1(pe store.PersistedEvent) (v1.UserDeleted, error) {
 }
 
 // ToUserEmailChangedV1 converts a domain event to a store.Event.
-func ToUserEmailChangedV1(aggregateType string, aggregateID string, e v1.UserEmailChanged, opts ...Option) (store.Event, error) {
+func ToUserEmailChangedV1(streamType string, streamID string, e v1.UserEmailChanged, opts ...Option) (store.Event, error) {
 	options := &eventOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -274,8 +274,8 @@ func ToUserEmailChangedV1(aggregateType string, aggregateID string, e v1.UserEma
 	}
 
 	return store.Event{
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
+		StreamType:    streamType,
+		StreamID:      streamID,
 		EventType:     "UserEmailChanged",
 		EventVersion:  1,
 		EventID:       uuid.New(),
@@ -307,7 +307,7 @@ func FromUserEmailChangedV1(pe store.PersistedEvent) (v1.UserEmailChanged, error
 }
 
 // ToUserRegisteredV1 converts a domain event to a store.Event.
-func ToUserRegisteredV1(aggregateType string, aggregateID string, e v1.UserRegistered, opts ...Option) (store.Event, error) {
+func ToUserRegisteredV1(streamType string, streamID string, e v1.UserRegistered, opts ...Option) (store.Event, error) {
 	options := &eventOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -324,8 +324,8 @@ func ToUserRegisteredV1(aggregateType string, aggregateID string, e v1.UserRegis
 	}
 
 	return store.Event{
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
+		StreamType:    streamType,
+		StreamID:      streamID,
 		EventType:     "UserRegistered",
 		EventVersion:  1,
 		EventID:       uuid.New(),
@@ -357,7 +357,7 @@ func FromUserRegisteredV1(pe store.PersistedEvent) (v1.UserRegistered, error) {
 }
 
 // ToUserRegisteredV2 converts a domain event to a store.Event.
-func ToUserRegisteredV2(aggregateType string, aggregateID string, e v2.UserRegistered, opts ...Option) (store.Event, error) {
+func ToUserRegisteredV2(streamType string, streamID string, e v2.UserRegistered, opts ...Option) (store.Event, error) {
 	options := &eventOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -374,8 +374,8 @@ func ToUserRegisteredV2(aggregateType string, aggregateID string, e v2.UserRegis
 	}
 
 	return store.Event{
-		AggregateType: aggregateType,
-		AggregateID:   aggregateID,
+		StreamType:    streamType,
+		StreamID:      streamID,
 		EventType:     "UserRegistered",
 		EventVersion:  2,
 		EventID:       uuid.New(),

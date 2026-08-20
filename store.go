@@ -18,21 +18,21 @@ var (
 // EventStore defines the interface for appending events.
 type EventStore interface {
 	// Append atomically appends one or more events within the provided transaction.
-	// Events must all belong to the same aggregate instance.
+	// Events must all belong to the same stream instance.
 	// Returns an AppendResult containing the persisted events with assigned versions
 	// and their global positions, or an error.
 	//
 	// The expectedVersion parameter controls optimistic concurrency:
 	// - Any(): No version check - always succeeds if no other errors
-	// - NoStream(): Aggregate must not exist - used for aggregate creation
-	// - Exact(N): Aggregate must be at version N - used for normal updates
+	// - NoStream(): Stream must not exist - used for stream creation
+	// - Exact(N): Stream must be at version N - used for normal updates
 	//
-	// The store automatically assigns AggregateVersion to each event:
-	// - Fetches the current version from the aggregate_heads table (O(1) lookup)
+	// The store automatically assigns StreamVersion to each event:
+	// - Fetches the current version from the stream_heads table (O(1) lookup)
 	// - Validates against expectedVersion
 	// - Assigns consecutive versions starting from (current + 1)
-	// - Updates aggregate_heads with the new version
-	// - The database unique constraint on (aggregate_type, aggregate_id, aggregate_version)
+	// - Updates stream_heads with the new version
+	// - The database unique constraint on (stream_type, stream_id, stream_version)
 	//   enforces optimistic concurrency as a last safety net
 	//
 	// Returns ErrOptimisticConcurrency if expectedVersion validation fails or if
@@ -41,7 +41,7 @@ type EventStore interface {
 	// Returns ErrNoEvents if events slice is empty.
 	//
 	// After a successful append:
-	// - Use result.ToVersion() to get the new aggregate version
+	// - Use result.ToVersion() to get the new stream version
 	// - Use result.Events to access the persisted events with all fields populated
 	// - Use result.GlobalPositions to get the assigned global positions
 	Append(ctx context.Context, tx pgx.Tx, expectedVersion ExpectedVersion, events []Event) (AppendResult, error)
@@ -75,26 +75,26 @@ type GlobalPositionReader interface {
 	GetLatestGlobalPosition(ctx context.Context, tx pgx.Tx) (int64, error)
 }
 
-// AggregateStreamReader defines the interface for reading events for a specific aggregate.
-type AggregateStreamReader interface {
-	// ReadAggregateStream reads all events for a specific aggregate instance and returns
-	// them as a Stream containing the aggregate's full history.
-	// Events are ordered by aggregate_version ascending.
+// StreamReader defines the interface for reading events for a specific stream.
+type StreamReader interface {
+	// ReadStream reads all events for a specific stream instance and returns
+	// them as a Stream containing the stream's full history.
+	// Events are ordered by stream_version ascending.
 	//
 	// Parameters:
-	// - aggregateType: the type of aggregate (e.g., "User", "Order")
-	// - aggregateID: the unique identifier of the aggregate instance (can be UUID string, email, etc.)
+	// - streamType: the type of stream (e.g., "User", "Order")
+	// - streamID: the unique identifier of the stream instance (can be UUID string, email, etc.)
 	// - fromVersion: optional minimum version (inclusive). Pass nil to read from the beginning.
 	// - toVersion: optional maximum version (inclusive). Pass nil to read to the end.
 	//
 	// Examples:
-	// - ReadAggregateStream(ctx, tx, "User", "550e8400-e29b-41d4-a716-446655440000", nil, nil) - read all events
-	// - ReadAggregateStream(ctx, tx, "User", id, ptr(5), nil) - read from version 5 onwards
-	// - ReadAggregateStream(ctx, tx, "User", id, nil, ptr(10)) - read up to version 10
-	// - ReadAggregateStream(ctx, tx, "User", id, ptr(5), ptr(10)) - read versions 5-10
+	// - ReadStream(ctx, tx, "User", "550e8400-e29b-41d4-a716-446655440000", nil, nil) - read all events
+	// - ReadStream(ctx, tx, "User", id, ptr(5), nil) - read from version 5 onwards
+	// - ReadStream(ctx, tx, "User", id, nil, ptr(10)) - read up to version 10
+	// - ReadStream(ctx, tx, "User", id, ptr(5), ptr(10)) - read versions 5-10
 	//
 	// Returns a Stream with an empty Events slice if no events match the criteria.
-	// Use stream.Version() to get the current aggregate version.
+	// Use stream.Version() to get the current stream version.
 	// Use stream.IsEmpty() to check if any events were found.
-	ReadAggregateStream(ctx context.Context, tx pgx.Tx, aggregateType string, aggregateID string, fromVersion, toVersion *int64) (Stream, error)
+	ReadStream(ctx context.Context, tx pgx.Tx, streamType string, streamID string, fromVersion, toVersion *int64) (Stream, error)
 }

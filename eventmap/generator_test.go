@@ -133,7 +133,7 @@ func TestGenerator_Generate(t *testing.T) {
 	requiredStrings := []string{
 		"package generated",
 		"func EventTypeOf(e any) (string, error)",
-		"func ToESEvents[T any](aggregateType string, aggregateID string, events []T, opts ...Option)",
+		"func ToESEvents[T any](streamType string, streamID string, events []T, opts ...Option)",
 		"func FromESEvents[T any](events []store.PersistedEvent) ([]T, error)",
 		"UserRegistered",
 		"UserEmailChanged",

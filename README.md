@@ -10,7 +10,7 @@ A minimal, production-ready event store for Go.
 
 - **PostgreSQL-backed event store** — append-only, immutable event log with BIGSERIAL global positions
 - **Optimistic concurrency control** — via expected versions enforced at the application and database level
-- **Aggregate stream reads** — load a full or partial event history with optional version ranges
+- **Stream reads** — load a full or partial event history with optional version ranges
 - **Sequential event reading** — read events by global position for building consumers and projections
 - **Transaction-first design** — all operations accept `pgx.Tx`; you control transaction boundaries
 - **Consumer interfaces** — `Consumer` and `ScopedConsumer` for event processing
@@ -72,7 +72,7 @@ func main() {
 
     s := postgres.NewStore(postgres.DefaultStoreConfig())
 
-    // Append events to a new aggregate
+    // Append events to a new stream
     userID := uuid.New().String()
     payload, _ := json.Marshal(map[string]string{"email": "alice@example.com", "name": "Alice"})
 
@@ -84,14 +84,14 @@ func main() {
 
     result, err := s.Append(ctx, tx, store.NoStream(), []store.Event{
         {
-            AggregateType: "User",
-            AggregateID:   userID,
-            EventID:       uuid.New(),
-            EventType:     "UserCreated",
-            EventVersion:  1,
-            Payload:       payload,
-            Metadata:      []byte(`{}`),
-            CreatedAt:     time.Now(),
+            StreamType:   "User",
+            StreamID:     userID,
+            EventID:      uuid.New(),
+            EventType:    "UserCreated",
+            EventVersion: 1,
+            Payload:      payload,
+            Metadata:     []byte(`{}`),
+            CreatedAt:    time.Now(),
         },
     })
     if err != nil {
@@ -102,14 +102,14 @@ func main() {
         log.Fatal(err)
     }
 
-    log.Printf("appended at positions %v, aggregate now at version %d",
+    log.Printf("appended at positions %v, stream now at version %d",
         result.GlobalPositions, result.ToVersion())
 
-    // Read the aggregate stream
+    // Read the stream
     tx2, _ := db.Begin(ctx)
     defer tx2.Rollback(ctx) //nolint:errcheck
 
-    stream, err := s.ReadAggregateStream(ctx, tx2, "User", userID, nil, nil)
+    stream, err := s.ReadStream(ctx, tx2, "User", userID, nil, nil)
     if err != nil {
         log.Fatal(err)
     }
@@ -117,21 +117,21 @@ func main() {
 
     log.Printf("stream: %d events, current version %d", stream.Len(), stream.Version())
     for _, e := range stream.Events {
-        log.Printf("  v%d  %s  pos=%d", e.AggregateVersion, e.EventType, e.GlobalPosition)
+        log.Printf("  v%d  %s  pos=%d", e.StreamVersion, e.EventType, e.GlobalPosition)
     }
 }
 ```
 
 ## Core Concepts
 
-### Events & Aggregates
+### Events & Streams
 
-`store.Event` is an immutable value object that you construct before persisting. The store assigns `AggregateVersion` and `GlobalPosition` during `Append`.
+`store.Event` is an immutable value object that you construct before persisting. The store assigns `StreamVersion` and `GlobalPosition` during `Append`.
 
 ```go
 event := store.Event{
-    AggregateType: "Order",         // logical category of the aggregate
-    AggregateID:   orderID,         // string identifier — UUID, email, slug, etc.
+    StreamType:    "Order",         // logical category of the stream
+    StreamID:      orderID,         // string identifier — UUID, email, slug, etc.
     EventID:       uuid.New(),      // idempotency key for the event itself
     EventType:     "OrderPlaced",   // discriminator used by consumers
     EventVersion:  1,               // schema version of the payload
@@ -145,12 +145,12 @@ event := store.Event{
 }
 ```
 
-`store.PersistedEvent` is what you read back. It adds `GlobalPosition` and `AggregateVersion`.
+`store.PersistedEvent` is what you read back. It adds `GlobalPosition` and `StreamVersion`.
 
-`store.Stream` wraps the full ordered history of a single aggregate along with helper methods:
+`store.Stream` wraps the full ordered history of a single stream along with helper methods:
 
 ```go
-stream.Version()  // current aggregate version (0 if empty)
+stream.Version()  // current stream version (0 if empty)
 stream.IsEmpty()  // true if no events were found
 stream.Len()      // number of events in the stream
 ```
@@ -158,23 +158,23 @@ stream.Len()      // number of events in the stream
 `store.AppendResult` describes the outcome of a write:
 
 ```go
-result.ToVersion()       // aggregate version after the append
-result.FromVersion()     // aggregate version before the append
+result.ToVersion()       // stream version after the append
+result.FromVersion()     // stream version before the append
 result.GlobalPositions   // global positions assigned to each event
 result.Events            // persisted events with all fields populated
 ```
 
 ### Expected Versions
 
-Expected versions are the mechanism for optimistic concurrency. You declare the state you expect the aggregate to be in before writing.
+Expected versions are the mechanism for optimistic concurrency. You declare the state you expect the stream to be in before writing.
 
 | Constructor | When to use |
 |---|---|
-| `store.NoStream()` | Creating a new aggregate — fails if it already exists |
-| `store.Exact(n)` | Updating an existing aggregate at a known version — fails on conflict |
+| `store.NoStream()` | Creating a new stream — fails if it already exists |
+| `store.Exact(n)` | Updating an existing stream at a known version — fails on conflict |
 | `store.Any()` | Unconditional write — skips version validation entirely |
 
-Conflicts return `store.ErrOptimisticConcurrency`. The database unique constraint on `(aggregate_type, aggregate_id, aggregate_version)` acts as a final safety net even if two transactions pass the application-level check simultaneously.
+Conflicts return `store.ErrOptimisticConcurrency`. The database unique constraint on `(stream_type, stream_id, stream_version)` acts as a final safety net even if two transactions pass the application-level check simultaneously.
 
 ```go
 // Create — must not already exist
@@ -191,21 +191,21 @@ if errors.Is(err, store.ErrOptimisticConcurrency) {
 }
 ```
 
-### Aggregate Streams
+### Stream Reads
 
-`ReadAggregateStream` returns the ordered event history for a single aggregate instance. Both version bounds are optional and inclusive.
+`ReadStream` returns the ordered event history for a single stream instance. Both version bounds are optional and inclusive.
 
 ```go
 // Full history
-stream, err := s.ReadAggregateStream(ctx, tx, "User", userID, nil, nil)
+stream, err := s.ReadStream(ctx, tx, "User", userID, nil, nil)
 
 // From a specific version onwards (e.g., to skip already-processed events)
 from := int64(5)
-stream, err = s.ReadAggregateStream(ctx, tx, "User", userID, &from, nil)
+stream, err = s.ReadStream(ctx, tx, "User", userID, &from, nil)
 
 // A version window
 from, to := int64(5), int64(10)
-stream, err = s.ReadAggregateStream(ctx, tx, "User", userID, &from, &to)
+stream, err = s.ReadStream(ctx, tx, "User", userID, &from, &to)
 ```
 
 ### Sequential Reads
@@ -242,7 +242,7 @@ latest, err := s.GetLatestGlobalPosition(ctx, tx)
 > as a safe naive checkpoint frontier under concurrent writers.
 
 Scoped async filtering is intentionally a worker/runtime concern rather than a store read primitive.
-If a consumer needs to react to only some aggregate types, establish a safe frontier from the unscoped
+If a consumer needs to react to only some stream types, establish a safe frontier from the unscoped
 global stream first, then filter inside the runtime.
 
 ### Consumers
@@ -267,16 +267,16 @@ func (c *AuditLogConsumer) Handle(ctx context.Context, tx pgx.Tx, event store.Pe
 }
 ```
 
-`consumer.ScopedConsumer` narrows delivery to specific aggregate types. Consumers that implement only `Consumer` receive all events.
+`consumer.ScopedConsumer` narrows delivery to specific stream types. Consumers that implement only `Consumer` receive all events.
 
 ```go
 type UserReadModel struct{}
 
-func (p *UserReadModel) Name() string              { return "user_read_model.v1" }
-func (p *UserReadModel) AggregateTypes() []string  { return []string{"User"} }
+func (p *UserReadModel) Name() string            { return "user_read_model.v1" }
+func (p *UserReadModel) StreamTypes() []string   { return []string{"User"} }
 
 func (p *UserReadModel) Handle(ctx context.Context, tx pgx.Tx, event store.PersistedEvent) error {
-    // Only receives events where AggregateType == "User"
+    // Only receives events where StreamType == "User"
     return nil
 }
 ```
@@ -290,7 +290,7 @@ func (p *UserReadModel) Handle(ctx context.Context, tx pgx.Tx, event store.Persi
 ```go
 s := postgres.NewStore(postgres.NewStoreConfig(
     postgres.WithEventsTable("my_events"),           // default: "events"
-    postgres.WithAggregateHeadsTable("agg_heads"),   // default: "aggregate_heads"
+    postgres.WithStreamHeadsTable("my_stream_heads"), // default: "stream_heads"
     postgres.WithLogger(myLogger),                   // optional; nil disables logging
 ))
 ```
@@ -323,7 +323,7 @@ go run github.com/eventsalsa/store/cmd/migrate-gen \
   -output migrations \
   -filename 001_events.sql \
   -events-table my_events \
-  -aggregate-heads-table my_aggregate_heads
+  -stream-heads-table my_stream_heads
 ```
 
 **`go:generate`:**
@@ -334,8 +334,8 @@ go run github.com/eventsalsa/store/cmd/migrate-gen \
 
 The generated migration creates:
 
-- **`events`** — append-only event log with `global_position BIGSERIAL` primary key, `event_id UUID UNIQUE`, and a `UNIQUE (aggregate_type, aggregate_id, aggregate_version)` constraint that enforces optimistic concurrency at the database level
-- **`aggregate_heads`** — one row per aggregate tracking its current version for O(1) version lookups during `Append`
+- **`events`** — append-only event log with `global_position BIGSERIAL` primary key, `event_id UUID UNIQUE`, and a `UNIQUE (stream_type, stream_id, stream_version)` constraint that enforces optimistic concurrency at the database level
+- **`stream_heads`** — one row per stream tracking its current version for O(1) version lookups during `Append`
 
 ## Event Mapping Code Generator
 
@@ -353,7 +353,7 @@ See the [`eventmap-codegen`](./examples/eventmap-codegen/) example for a complet
 
 Complete, runnable examples are in [`examples/`](./examples/):
 
-- **[basic](./examples/basic/)** — connecting, appending events, reading aggregate streams, and reading the global log
+- **[basic](./examples/basic/)** — connecting, appending events, reading streams, and reading the global log
 
 - **[eventmap-codegen](./examples/eventmap-codegen/)** — generating type-safe domain event mappings with `eventmap-gen`, including versioned payloads and projections
 

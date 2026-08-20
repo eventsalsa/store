@@ -126,7 +126,7 @@ func setupTestTables(t *testing.T, db testDB) {
 
 	// Drop existing objects to ensure clean state
 	_, err := db.Exec(ctx, `
-		DROP TABLE IF EXISTS aggregate_heads CASCADE;
+		DROP TABLE IF EXISTS stream_heads CASCADE;
 		DROP TABLE IF EXISTS events CASCADE;
 	`)
 	if err != nil {
@@ -136,10 +136,10 @@ func setupTestTables(t *testing.T, db testDB) {
 	// Generate and execute migration
 	tmpDir := t.TempDir()
 	config := &migrations.Config{
-		OutputFolder:        tmpDir,
-		OutputFilename:      "test.sql",
-		EventsTable:         "events",
-		AggregateHeadsTable: "aggregate_heads",
+		OutputFolder:     tmpDir,
+		OutputFilename:   "test.sql",
+		EventsTable:      "events",
+		StreamHeadsTable: "stream_heads",
 	}
 
 	if err := migrations.GeneratePostgres(config); err != nil {
@@ -167,27 +167,27 @@ func TestAppendEvents(t *testing.T) {
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	// Create test events
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 	events := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "TestEventCreated",
-			EventVersion:  1,
-			Payload:       []byte(`{"test":"data"}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "TestEventCreated",
+			EventVersion: 1,
+			Payload:      []byte(`{"test":"data"}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "TestEventUpdated",
-			EventVersion:  1,
-			Payload:       []byte(`{"test":"updated"}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "TestEventUpdated",
+			EventVersion: 1,
+			Payload:      []byte(`{"test":"updated"}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -197,7 +197,7 @@ func TestAppendEvents(t *testing.T) {
 	}
 	defer tx.Rollback(ctx)
 
-	// Use NoStream() for creating a new aggregate
+	// Use NoStream() for creating a new stream
 	result, err := pgStore.Append(ctx, tx, store.NoStream(), events)
 	if err != nil {
 		t.Fatalf("Failed to append events: %v", err)
@@ -214,20 +214,20 @@ func TestAppendEvents(t *testing.T) {
 		}
 	}
 
-	// Verify persisted events have aggregate versions set
+	// Verify persisted events have stream versions set
 	if len(result.Events) != len(events) {
 		t.Errorf("Expected %d persisted events, got %d", len(events), len(result.Events))
 	}
-	if result.Events[0].AggregateVersion != 1 {
-		t.Errorf("Expected first event to have version 1, got %d", result.Events[0].AggregateVersion)
+	if result.Events[0].StreamVersion != 1 {
+		t.Errorf("Expected first event to have version 1, got %d", result.Events[0].StreamVersion)
 	}
-	if result.Events[1].AggregateVersion != 2 {
-		t.Errorf("Expected second event to have version 2, got %d", result.Events[1].AggregateVersion)
+	if result.Events[1].StreamVersion != 2 {
+		t.Errorf("Expected second event to have version 2, got %d", result.Events[1].StreamVersion)
 	}
 
 	// Verify FromVersion and ToVersion
 	if result.FromVersion() != 0 {
-		t.Errorf("Expected FromVersion=0 for new aggregate, got %d", result.FromVersion())
+		t.Errorf("Expected FromVersion=0 for new stream, got %d", result.FromVersion())
 	}
 	if result.ToVersion() != 2 {
 		t.Errorf("Expected ToVersion=2, got %d", result.ToVersion())
@@ -247,17 +247,17 @@ func TestAppendEvents_OptimisticConcurrency(t *testing.T) {
 	ctx := context.Background()
 	str := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 
 	event1 := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventCreated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventCreated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
 	// First, append an event successfully to establish version 1
@@ -273,14 +273,14 @@ func TestAppendEvents_OptimisticConcurrency(t *testing.T) {
 	// Now try to manually insert a duplicate version to simulate optimistic concurrency conflict
 	// This simulates what happens when two processes both read MAX(version)=1, both try to insert version=2
 	event2 := store.Event{
-		AggregateType: "TestAggregate",
-		AggregateID:   aggregateID,
-		EventID:       uuid.New(),
-		EventType:     "TestEventUpdated",
-		EventVersion:  1,
-		Payload:       []byte(`{}`),
-		Metadata:      []byte(`{}`),
-		CreatedAt:     time.Now(),
+		StreamType:   "TestStream",
+		StreamID:     streamID,
+		EventID:      uuid.New(),
+		EventType:    "TestEventUpdated",
+		EventVersion: 1,
+		Payload:      []byte(`{}`),
+		Metadata:     []byte(`{}`),
+		CreatedAt:    time.Now(),
 	}
 
 	tx2, _ := db.BeginTx(ctx, nil)
@@ -289,11 +289,11 @@ func TestAppendEvents_OptimisticConcurrency(t *testing.T) {
 	// Manually insert with version=1 (which already exists) to trigger unique constraint violation
 	_, err = tx2.Exec(ctx, `
 		INSERT INTO events (
-			aggregate_type, aggregate_id, aggregate_version,
+			stream_type, stream_id, stream_version,
 			event_id, event_type, event_version,
 			payload, metadata, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, event2.AggregateType, event2.AggregateID, int64(1), // Use version 1 which already exists
+	`, event2.StreamType, event2.StreamID, int64(1), // Use version 1 which already exists
 		event2.EventID, event2.EventType, event2.EventVersion,
 		event2.Payload, string(event2.Metadata), event2.CreatedAt)
 
@@ -318,29 +318,29 @@ func TestReadEvents(t *testing.T) {
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	// Append some events
-	aggregateID1 := uuid.New().String()
-	aggregateID2 := uuid.New().String()
+	streamID1 := uuid.New().String()
+	streamID2 := uuid.New().String()
 
 	events := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID1,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID1,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID2,
-			EventID:       uuid.New(),
-			EventType:     "Event2",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID2,
+			EventID:      uuid.New(),
+			EventType:    "Event2",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -383,16 +383,16 @@ func TestReadEvents_RawCheckpointCanSkipEarlierLaterCommittedPosition(t *testing
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	newEvent := func(aggregateType, eventType string) store.Event {
+	newEvent := func(streamType, eventType string) store.Event {
 		return store.Event{
-			AggregateType: aggregateType,
-			AggregateID:   uuid.New().String(),
-			EventID:       uuid.New(),
-			EventType:     eventType,
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   streamType,
+			StreamID:     uuid.New().String(),
+			EventID:      uuid.New(),
+			EventType:    eventType,
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		}
 	}
 
@@ -506,16 +506,16 @@ func TestReadEvents_RawPositionsCanContainPermanentGapAfterRollback(t *testing.T
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	newEvent := func(aggregateType, eventType string) store.Event {
+	newEvent := func(streamType, eventType string) store.Event {
 		return store.Event{
-			AggregateType: aggregateType,
-			AggregateID:   uuid.New().String(),
-			EventID:       uuid.New(),
-			EventType:     eventType,
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   streamType,
+			StreamID:     uuid.New().String(),
+			EventID:      uuid.New(),
+			EventType:    eventType,
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		}
 	}
 
@@ -608,14 +608,14 @@ func TestReadEvents_Pagination(t *testing.T) {
 	// Append multiple events
 	for i := 0; i < 5; i++ {
 		event := store.Event{
-			AggregateType: "TestAggregate",
-			AggregateID:   uuid.New().String(),
-			EventID:       uuid.New(),
-			EventType:     fmt.Sprintf("Event%d", i),
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     uuid.New().String(),
+			EventID:      uuid.New(),
+			EventType:    fmt.Sprintf("Event%d", i),
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		}
 
 		tx, _ := db.BeginTx(ctx, nil)
@@ -662,7 +662,7 @@ func TestReadEvents_Pagination(t *testing.T) {
 	}
 }
 
-func TestAggregateVersionTracking(t *testing.T) {
+func TestStreamVersionTracking(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -671,29 +671,29 @@ func TestAggregateVersionTracking(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 
 	// Append first batch of events
 	events1 := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event2",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event2",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -706,31 +706,31 @@ func TestAggregateVersionTracking(t *testing.T) {
 		t.Fatalf("First commit failed: %v", err)
 	}
 
-	// Verify aggregate_heads has correct version
-	var aggVersion int64
+	// Verify stream_heads has correct version
+	var stmVersion int64
 	err = db.QueryRowContext(ctx, `
-		SELECT aggregate_version 
-		FROM aggregate_heads 
-		WHERE aggregate_type = $1 AND aggregate_id = $2
-	`, "TestAggregate", aggregateID).Scan(&aggVersion)
+		SELECT stream_version 
+		FROM stream_heads 
+		WHERE stream_type = $1 AND stream_id = $2
+	`, "TestStream", streamID).Scan(&stmVersion)
 	if err != nil {
-		t.Fatalf("Failed to query aggregate_heads: %v", err)
+		t.Fatalf("Failed to query stream_heads: %v", err)
 	}
-	if aggVersion != 2 {
-		t.Errorf("Expected aggregate version 2, got %d", aggVersion)
+	if stmVersion != 2 {
+		t.Errorf("Expected stream version 2, got %d", stmVersion)
 	}
 
 	// Append second batch of events
 	events2 := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event3",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event3",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -743,26 +743,26 @@ func TestAggregateVersionTracking(t *testing.T) {
 		t.Fatalf("Second commit failed: %v", err)
 	}
 
-	// Verify aggregate_heads was updated
+	// Verify stream_heads was updated
 	err = db.QueryRowContext(ctx, `
-		SELECT aggregate_version 
-		FROM aggregate_heads 
-		WHERE aggregate_type = $1 AND aggregate_id = $2
-	`, "TestAggregate", aggregateID).Scan(&aggVersion)
+		SELECT stream_version 
+		FROM stream_heads 
+		WHERE stream_type = $1 AND stream_id = $2
+	`, "TestStream", streamID).Scan(&stmVersion)
 	if err != nil {
-		t.Fatalf("Failed to query aggregate_heads: %v", err)
+		t.Fatalf("Failed to query stream_heads: %v", err)
 	}
-	if aggVersion != 3 {
-		t.Errorf("Expected aggregate version 3, got %d", aggVersion)
+	if stmVersion != 3 {
+		t.Errorf("Expected stream version 3, got %d", stmVersion)
 	}
 
 	// Verify events have correct versions
 	rows, err := db.QueryContext(ctx, `
-		SELECT aggregate_version 
+		SELECT stream_version 
 		FROM events 
-		WHERE aggregate_type = $1 AND aggregate_id = $2 
-		ORDER BY aggregate_version
-	`, "TestAggregate", aggregateID)
+		WHERE stream_type = $1 AND stream_id = $2 
+		ORDER BY stream_version
+	`, "TestStream", streamID)
 	if err != nil {
 		t.Fatalf("Failed to query events: %v", err)
 	}
@@ -792,7 +792,7 @@ func TestAggregateVersionTracking(t *testing.T) {
 	}
 }
 
-func TestAggregateVersionTracking_MultipleAggregates(t *testing.T) {
+func TestStreamVersionTracking_MultipleStreams(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -801,94 +801,94 @@ func TestAggregateVersionTracking_MultipleAggregates(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	// Create events for two different aggregates
-	aggregate1 := uuid.New().String()
-	aggregate2 := uuid.New().String()
+	// Create events for two different streams
+	stream1 := uuid.New().String()
+	stream2 := uuid.New().String()
 
 	events1 := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregate1,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     stream1,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
 	events2 := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregate2,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     stream2,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
-	// Append events for both aggregates
+	// Append events for both streams
 	tx1, _ := db.BeginTx(ctx, nil)
 	_, err := pgStore.Append(ctx, tx1, store.Any(), events1)
 	if err != nil {
-		t.Fatalf("Failed to append events for aggregate1: %v", err)
+		t.Fatalf("Failed to append events for stream1: %v", err)
 	}
 	if err := tx1.Commit(ctx); err != nil {
-		t.Fatalf("Failed to commit aggregate1: %v", err)
+		t.Fatalf("Failed to commit stream1: %v", err)
 	}
 
 	tx2, _ := db.BeginTx(ctx, nil)
 	_, err = pgStore.Append(ctx, tx2, store.Any(), events2)
 	if err != nil {
-		t.Fatalf("Failed to append events for aggregate2: %v", err)
+		t.Fatalf("Failed to append events for stream2: %v", err)
 	}
 	if err := tx2.Commit(ctx); err != nil {
-		t.Fatalf("Failed to commit aggregate2: %v", err)
+		t.Fatalf("Failed to commit stream2: %v", err)
 	}
 
-	// Verify both aggregates have version 1
+	// Verify both streams have version 1
 	var version1, version2 int64
 	err = db.QueryRowContext(ctx, `
-		SELECT aggregate_version 
-		FROM aggregate_heads 
-		WHERE aggregate_type = $1 AND aggregate_id = $2
-	`, "TestAggregate", aggregate1).Scan(&version1)
+		SELECT stream_version 
+		FROM stream_heads 
+		WHERE stream_type = $1 AND stream_id = $2
+	`, "TestStream", stream1).Scan(&version1)
 	if err != nil {
-		t.Fatalf("Failed to query version for aggregate1: %v", err)
+		t.Fatalf("Failed to query version for stream1: %v", err)
 	}
 
 	err = db.QueryRowContext(ctx, `
-		SELECT aggregate_version 
-		FROM aggregate_heads 
-		WHERE aggregate_type = $1 AND aggregate_id = $2
-	`, "TestAggregate", aggregate2).Scan(&version2)
+		SELECT stream_version 
+		FROM stream_heads 
+		WHERE stream_type = $1 AND stream_id = $2
+	`, "TestStream", stream2).Scan(&version2)
 	if err != nil {
-		t.Fatalf("Failed to query version for aggregate2: %v", err)
+		t.Fatalf("Failed to query version for stream2: %v", err)
 	}
 
 	if version1 != 1 {
-		t.Errorf("Expected aggregate1 version 1, got %d", version1)
+		t.Errorf("Expected stream1 version 1, got %d", version1)
 	}
 	if version2 != 1 {
-		t.Errorf("Expected aggregate2 version 1, got %d", version2)
+		t.Errorf("Expected stream2 version 1, got %d", version2)
 	}
 
-	// Verify aggregate_heads has exactly 2 rows
+	// Verify stream_heads has exactly 2 rows
 	var count int
-	err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM aggregate_heads`).Scan(&count)
+	err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM stream_heads`).Scan(&count)
 	if err != nil {
-		t.Fatalf("Failed to count aggregate_heads: %v", err)
+		t.Fatalf("Failed to count stream_heads: %v", err)
 	}
 	if count != 2 {
-		t.Errorf("Expected 2 rows in aggregate_heads, got %d", count)
+		t.Errorf("Expected 2 rows in stream_heads, got %d", count)
 	}
 }
 
-func TestReadAggregateStream_FullStream(t *testing.T) {
+func TestReadStream_FullStream(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -897,38 +897,38 @@ func TestReadAggregateStream_FullStream(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	// Create test events for one aggregate
-	aggregateID := uuid.New().String()
+	// Create test events for one stream
+	streamID := uuid.New().String()
 	events := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{"data":"1"}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{"data":"1"}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event2",
-			EventVersion:  1,
-			Payload:       []byte(`{"data":"2"}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event2",
+			EventVersion: 1,
+			Payload:      []byte(`{"data":"2"}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event3",
-			EventVersion:  1,
-			Payload:       []byte(`{"data":"3"}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event3",
+			EventVersion: 1,
+			Payload:      []byte(`{"data":"3"}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -943,9 +943,9 @@ func TestReadAggregateStream_FullStream(t *testing.T) {
 	tx2, _ := db.BeginTx(ctx, nil)
 	defer tx2.Rollback(ctx)
 
-	stream, err := pgStore.ReadAggregateStream(ctx, tx2, "TestAggregate", aggregateID, nil, nil)
+	stream, err := pgStore.ReadStream(ctx, tx2, "TestStream", streamID, nil, nil)
 	if err != nil {
-		t.Fatalf("Failed to read aggregate stream: %v", err)
+		t.Fatalf("Failed to read stream: %v", err)
 	}
 
 	if stream.Len() != 3 {
@@ -957,22 +957,22 @@ func TestReadAggregateStream_FullStream(t *testing.T) {
 		t.Errorf("Expected stream version 3, got %d", stream.Version())
 	}
 
-	// Verify events are ordered by aggregate_version
+	// Verify events are ordered by stream_version
 	for i, event := range stream.Events {
 		expectedVersion := int64(i + 1)
-		if event.AggregateVersion != expectedVersion {
-			t.Errorf("Event %d: expected version %d, got %d", i, expectedVersion, event.AggregateVersion)
+		if event.StreamVersion != expectedVersion {
+			t.Errorf("Event %d: expected version %d, got %d", i, expectedVersion, event.StreamVersion)
 		}
-		if event.AggregateID != aggregateID {
-			t.Errorf("Event %d: wrong aggregate ID", i)
+		if event.StreamID != streamID {
+			t.Errorf("Event %d: wrong stream ID", i)
 		}
-		if event.AggregateType != "TestAggregate" {
-			t.Errorf("Event %d: wrong aggregate type", i)
+		if event.StreamType != "TestStream" {
+			t.Errorf("Event %d: wrong stream type", i)
 		}
 	}
 }
 
-func TestReadAggregateStream_WithFromVersion(t *testing.T) {
+func TestReadStream_WithFromVersion(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -982,37 +982,37 @@ func TestReadAggregateStream_WithFromVersion(t *testing.T) {
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	// Create test events
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 	events := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event2",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event2",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event3",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event3",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -1028,9 +1028,9 @@ func TestReadAggregateStream_WithFromVersion(t *testing.T) {
 	defer tx2.Rollback(ctx)
 
 	fromVersion := int64(2)
-	stream, err := pgStore.ReadAggregateStream(ctx, tx2, "TestAggregate", aggregateID, &fromVersion, nil)
+	stream, err := pgStore.ReadStream(ctx, tx2, "TestStream", streamID, &fromVersion, nil)
 	if err != nil {
-		t.Fatalf("Failed to read aggregate stream: %v", err)
+		t.Fatalf("Failed to read stream: %v", err)
 	}
 
 	if stream.Len() != 2 {
@@ -1043,15 +1043,15 @@ func TestReadAggregateStream_WithFromVersion(t *testing.T) {
 	}
 
 	// Verify we got versions 2 and 3
-	if len(stream.Events) > 0 && stream.Events[0].AggregateVersion != 2 {
-		t.Errorf("First event: expected version 2, got %d", stream.Events[0].AggregateVersion)
+	if len(stream.Events) > 0 && stream.Events[0].StreamVersion != 2 {
+		t.Errorf("First event: expected version 2, got %d", stream.Events[0].StreamVersion)
 	}
-	if len(stream.Events) > 1 && stream.Events[1].AggregateVersion != 3 {
-		t.Errorf("Second event: expected version 3, got %d", stream.Events[1].AggregateVersion)
+	if len(stream.Events) > 1 && stream.Events[1].StreamVersion != 3 {
+		t.Errorf("Second event: expected version 3, got %d", stream.Events[1].StreamVersion)
 	}
 }
 
-func TestReadAggregateStream_WithToVersion(t *testing.T) {
+func TestReadStream_WithToVersion(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -1061,37 +1061,37 @@ func TestReadAggregateStream_WithToVersion(t *testing.T) {
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	// Create test events
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 	events := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event2",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event2",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event3",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event3",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -1107,9 +1107,9 @@ func TestReadAggregateStream_WithToVersion(t *testing.T) {
 	defer tx2.Rollback(ctx)
 
 	toVersion := int64(2)
-	stream, err := pgStore.ReadAggregateStream(ctx, tx2, "TestAggregate", aggregateID, nil, &toVersion)
+	stream, err := pgStore.ReadStream(ctx, tx2, "TestStream", streamID, nil, &toVersion)
 	if err != nil {
-		t.Fatalf("Failed to read aggregate stream: %v", err)
+		t.Fatalf("Failed to read stream: %v", err)
 	}
 
 	if stream.Len() != 2 {
@@ -1122,15 +1122,15 @@ func TestReadAggregateStream_WithToVersion(t *testing.T) {
 	}
 
 	// Verify we got versions 1 and 2
-	if len(stream.Events) > 0 && stream.Events[0].AggregateVersion != 1 {
-		t.Errorf("First event: expected version 1, got %d", stream.Events[0].AggregateVersion)
+	if len(stream.Events) > 0 && stream.Events[0].StreamVersion != 1 {
+		t.Errorf("First event: expected version 1, got %d", stream.Events[0].StreamVersion)
 	}
-	if len(stream.Events) > 1 && stream.Events[1].AggregateVersion != 2 {
-		t.Errorf("Second event: expected version 2, got %d", stream.Events[1].AggregateVersion)
+	if len(stream.Events) > 1 && stream.Events[1].StreamVersion != 2 {
+		t.Errorf("Second event: expected version 2, got %d", stream.Events[1].StreamVersion)
 	}
 }
 
-func TestReadAggregateStream_WithVersionRange(t *testing.T) {
+func TestReadStream_WithVersionRange(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -1140,47 +1140,47 @@ func TestReadAggregateStream_WithVersionRange(t *testing.T) {
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
 	// Create test events
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 	events := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event2",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event2",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event3",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event3",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event4",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event4",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -1197,9 +1197,9 @@ func TestReadAggregateStream_WithVersionRange(t *testing.T) {
 
 	fromVersion := int64(2)
 	toVersion := int64(3)
-	stream, err := pgStore.ReadAggregateStream(ctx, tx2, "TestAggregate", aggregateID, &fromVersion, &toVersion)
+	stream, err := pgStore.ReadStream(ctx, tx2, "TestStream", streamID, &fromVersion, &toVersion)
 	if err != nil {
-		t.Fatalf("Failed to read aggregate stream: %v", err)
+		t.Fatalf("Failed to read stream: %v", err)
 	}
 
 	if stream.Len() != 2 {
@@ -1212,15 +1212,15 @@ func TestReadAggregateStream_WithVersionRange(t *testing.T) {
 	}
 
 	// Verify we got versions 2 and 3
-	if len(stream.Events) > 0 && stream.Events[0].AggregateVersion != 2 {
-		t.Errorf("First event: expected version 2, got %d", stream.Events[0].AggregateVersion)
+	if len(stream.Events) > 0 && stream.Events[0].StreamVersion != 2 {
+		t.Errorf("First event: expected version 2, got %d", stream.Events[0].StreamVersion)
 	}
-	if len(stream.Events) > 1 && stream.Events[1].AggregateVersion != 3 {
-		t.Errorf("Second event: expected version 3, got %d", stream.Events[1].AggregateVersion)
+	if len(stream.Events) > 1 && stream.Events[1].StreamVersion != 3 {
+		t.Errorf("Second event: expected version 3, got %d", stream.Events[1].StreamVersion)
 	}
 }
 
-func TestReadAggregateStream_EmptyResult(t *testing.T) {
+func TestReadStream_EmptyResult(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -1231,14 +1231,14 @@ func TestReadAggregateStream_EmptyResult(t *testing.T) {
 
 	// Don't append any events
 
-	// Try to read non-existent aggregate
+	// Try to read non-existent stream
 	tx, _ := db.BeginTx(ctx, nil)
 	defer tx.Rollback(ctx)
 
 	nonExistentID := uuid.New().String()
-	stream, err := pgStore.ReadAggregateStream(ctx, tx, "TestAggregate", nonExistentID, nil, nil)
+	stream, err := pgStore.ReadStream(ctx, tx, "TestStream", nonExistentID, nil, nil)
 	if err != nil {
-		t.Fatalf("Failed to read aggregate stream: %v", err)
+		t.Fatalf("Failed to read stream: %v", err)
 	}
 
 	if !stream.IsEmpty() {
@@ -1250,7 +1250,7 @@ func TestReadAggregateStream_EmptyResult(t *testing.T) {
 	}
 }
 
-func TestReadAggregateStream_MultipleAggregates(t *testing.T) {
+func TestReadStream_MultipleStreams(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -1259,97 +1259,97 @@ func TestReadAggregateStream_MultipleAggregates(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	// Create events for two aggregates
-	aggregate1 := uuid.New().String()
-	aggregate2 := uuid.New().String()
+	// Create events for two streams
+	stream1 := uuid.New().String()
+	stream2 := uuid.New().String()
 
 	events1 := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregate1,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     stream1,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregate1,
-			EventID:       uuid.New(),
-			EventType:     "Event2",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     stream1,
+			EventID:      uuid.New(),
+			EventType:    "Event2",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
 	events2 := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregate2,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     stream2,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
 	tx1, _ := db.BeginTx(ctx, nil)
 	_, err := pgStore.Append(ctx, tx1, store.Any(), events1)
 	if err != nil {
-		t.Fatalf("Failed to append events for aggregate1: %v", err)
+		t.Fatalf("Failed to append events for stream1: %v", err)
 	}
 	tx1.Commit(ctx)
 
 	tx2, _ := db.BeginTx(ctx, nil)
 	_, err = pgStore.Append(ctx, tx2, store.Any(), events2)
 	if err != nil {
-		t.Fatalf("Failed to append events for aggregate2: %v", err)
+		t.Fatalf("Failed to append events for stream2: %v", err)
 	}
 	tx2.Commit(ctx)
 
-	// Read aggregate1 stream
+	// Read stream1 stream
 	tx3, _ := db.BeginTx(ctx, nil)
 	defer tx3.Rollback(ctx)
 
-	stream1, err := pgStore.ReadAggregateStream(ctx, tx3, "TestAggregate", aggregate1, nil, nil)
+	stream1Result, err := pgStore.ReadStream(ctx, tx3, "TestStream", stream1, nil, nil)
 	if err != nil {
-		t.Fatalf("Failed to read aggregate1 stream: %v", err)
+		t.Fatalf("Failed to read stream1: %v", err)
 	}
 
-	if stream1.Len() != 2 {
-		t.Errorf("Expected 2 events for aggregate1, got %d", stream1.Len())
+	if stream1Result.Len() != 2 {
+		t.Errorf("Expected 2 events for stream1, got %d", stream1Result.Len())
 	}
 
-	// Read aggregate2 stream
-	stream2, err := pgStore.ReadAggregateStream(ctx, tx3, "TestAggregate", aggregate2, nil, nil)
+	// Read stream2 stream
+	stream2Result, err := pgStore.ReadStream(ctx, tx3, "TestStream", stream2, nil, nil)
 	if err != nil {
-		t.Fatalf("Failed to read aggregate2 stream: %v", err)
+		t.Fatalf("Failed to read stream2: %v", err)
 	}
 
-	if stream2.Len() != 1 {
-		t.Errorf("Expected 1 event for aggregate2, got %d", stream2.Len())
+	if stream2Result.Len() != 1 {
+		t.Errorf("Expected 1 event for stream2, got %d", stream2Result.Len())
 	}
 
 	// Verify no cross-contamination
-	for _, e := range stream1.Events {
-		if e.AggregateID != aggregate1 {
-			t.Error("aggregate1 stream contains event from different aggregate")
+	for _, e := range stream1Result.Events {
+		if e.StreamID != stream1 {
+			t.Error("stream1 contains event from different stream")
 		}
 	}
-	for _, e := range stream2.Events {
-		if e.AggregateID != aggregate2 {
-			t.Error("aggregate2 stream contains event from different aggregate")
+	for _, e := range stream2Result.Events {
+		if e.StreamID != stream2 {
+			t.Error("stream2 contains event from different stream")
 		}
 	}
 }
 
-func TestReadAggregateStream_Ordering(t *testing.T) {
+func TestReadStream_Ordering(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -1358,20 +1358,20 @@ func TestReadAggregateStream_Ordering(t *testing.T) {
 	ctx := context.Background()
 	pgStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	// Create events in batches to ensure ordering is by aggregate_version not global_position
-	aggregateID := uuid.New().String()
+	// Create events in batches to ensure ordering is by stream_version not global_position
+	streamID := uuid.New().String()
 
 	// First batch
 	events1 := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event1",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event1",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -1382,18 +1382,18 @@ func TestReadAggregateStream_Ordering(t *testing.T) {
 	}
 	tx1.Commit(ctx)
 
-	// Append event for different aggregate in between
-	otherAggregate := uuid.New().String()
+	// Append event for different stream in between
+	otherStream := uuid.New().String()
 	eventsOther := []store.Event{
 		{
-			AggregateType: "OtherAggregate",
-			AggregateID:   otherAggregate,
-			EventID:       uuid.New(),
-			EventType:     "OtherEvent",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "OtherStream",
+			StreamID:     otherStream,
+			EventID:      uuid.New(),
+			EventType:    "OtherEvent",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -1404,17 +1404,17 @@ func TestReadAggregateStream_Ordering(t *testing.T) {
 	}
 	tx2.Commit(ctx)
 
-	// Second batch for our aggregate
+	// Second batch for our stream
 	events2 := []store.Event{
 		{
-			AggregateType: "TestAggregate",
-			AggregateID:   aggregateID,
-			EventID:       uuid.New(),
-			EventType:     "Event2",
-			EventVersion:  1,
-			Payload:       []byte(`{}`),
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "TestStream",
+			StreamID:     streamID,
+			EventID:      uuid.New(),
+			EventType:    "Event2",
+			EventVersion: 1,
+			Payload:      []byte(`{}`),
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -1429,9 +1429,9 @@ func TestReadAggregateStream_Ordering(t *testing.T) {
 	tx4, _ := db.BeginTx(ctx, nil)
 	defer tx4.Rollback(ctx)
 
-	stream, err := pgStore.ReadAggregateStream(ctx, tx4, "TestAggregate", aggregateID, nil, nil)
+	stream, err := pgStore.ReadStream(ctx, tx4, "TestStream", streamID, nil, nil)
 	if err != nil {
-		t.Fatalf("Failed to read aggregate stream: %v", err)
+		t.Fatalf("Failed to read stream: %v", err)
 	}
 
 	if stream.Len() != 2 {
@@ -1443,19 +1443,19 @@ func TestReadAggregateStream_Ordering(t *testing.T) {
 		t.Errorf("Expected stream version 2, got %d", stream.Version())
 	}
 
-	// Verify ordering by aggregate_version (should be 1, 2)
+	// Verify ordering by stream_version (should be 1, 2)
 	for i, event := range stream.Events {
 		expectedVersion := int64(i + 1)
-		if event.AggregateVersion != expectedVersion {
-			t.Errorf("Event %d: expected version %d, got %d", i, expectedVersion, event.AggregateVersion)
+		if event.StreamVersion != expectedVersion {
+			t.Errorf("Event %d: expected version %d, got %d", i, expectedVersion, event.StreamVersion)
 		}
 	}
 
-	// Verify global positions are NOT necessarily sequential (due to interleaved aggregate)
+	// Verify global positions are NOT necessarily sequential (due to interleaved stream)
 	if len(stream.Events) == 2 {
 		if stream.Events[1].GlobalPosition == stream.Events[0].GlobalPosition+1 {
-			// This might happen, but we're just documenting that ordering is by aggregate_version
-			t.Log("Note: global positions happen to be sequential, but ordering is guaranteed by aggregate_version")
+			// This might happen, but we're just documenting that ordering is by stream_version
+			t.Log("Note: global positions happen to be sequential, but ordering is guaranteed by stream_version")
 		}
 	}
 }

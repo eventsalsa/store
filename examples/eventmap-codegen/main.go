@@ -58,7 +58,7 @@ func main() {
 		fmt.Printf("Event %d:\n", i+1)
 		fmt.Printf("  Type: %s\n", esEvents[i].EventType)
 		fmt.Printf("  Version: %d\n", esEvents[i].EventVersion)
-		fmt.Printf("  AggregateID: %s\n", esEvents[i].AggregateID)
+		fmt.Printf("  StreamID: %s\n", esEvents[i].StreamID)
 		fmt.Printf("  Payload: %s\n", string(esEvents[i].Payload))
 		if esEvents[i].TraceID.Valid {
 			fmt.Printf("  TraceID: %s\n", esEvents[i].TraceID.String)
@@ -103,40 +103,40 @@ func main() {
 	// Simulate events stored in database (mixed versions)
 	persistedEvents := []store.PersistedEvent{
 		{
-			AggregateType:    "User",
-			AggregateID:      userID,
-			EventType:        "UserRegistered",
-			EventVersion:     1,
-			EventID:          uuid.New(),
-			Payload:          []byte(`{"email":"charlie@example.com","name":"Charlie Brown"}`),
-			Metadata:         []byte("{}"),
-			GlobalPosition:   1,
-			AggregateVersion: 1,
-			CreatedAt:        time.Now(),
+			StreamType:     "User",
+			StreamID:       userID,
+			EventType:      "UserRegistered",
+			EventVersion:   1,
+			EventID:        uuid.New(),
+			Payload:        []byte(`{"email":"charlie@example.com","name":"Charlie Brown"}`),
+			Metadata:       []byte("{}"),
+			GlobalPosition: 1,
+			StreamVersion:  1,
+			CreatedAt:      time.Now(),
 		},
 		{
-			AggregateType:    "User",
-			AggregateID:      userID,
-			EventType:        "UserEmailChanged",
-			EventVersion:     1,
-			EventID:          uuid.New(),
-			Payload:          []byte(`{"old_email":"charlie@example.com","new_email":"charlie.brown@example.com"}`),
-			Metadata:         []byte("{}"),
-			GlobalPosition:   2,
-			AggregateVersion: 2,
-			CreatedAt:        time.Now(),
+			StreamType:     "User",
+			StreamID:       userID,
+			EventType:      "UserEmailChanged",
+			EventVersion:   1,
+			EventID:        uuid.New(),
+			Payload:        []byte(`{"old_email":"charlie@example.com","new_email":"charlie.brown@example.com"}`),
+			Metadata:       []byte("{}"),
+			GlobalPosition: 2,
+			StreamVersion:  2,
+			CreatedAt:      time.Now(),
 		},
 		{
-			AggregateType:    "User",
-			AggregateID:      userID,
-			EventType:        "UserRegistered",
-			EventVersion:     2,
-			EventID:          uuid.New(),
-			Payload:          []byte(`{"email":"dave@example.com","name":"Dave Wilson","country":"Canada","registered_at":1704067200}`),
-			Metadata:         []byte("{}"),
-			GlobalPosition:   3,
-			AggregateVersion: 1,
-			CreatedAt:        time.Now(),
+			StreamType:     "User",
+			StreamID:       userID,
+			EventType:      "UserRegistered",
+			EventVersion:   2,
+			EventID:        uuid.New(),
+			Payload:        []byte(`{"email":"dave@example.com","name":"Dave Wilson","country":"Canada","registered_at":1704067200}`),
+			Metadata:       []byte("{}"),
+			GlobalPosition: 3,
+			StreamVersion:  1,
+			CreatedAt:      time.Now(),
 		},
 	}
 
@@ -195,16 +195,16 @@ func main() {
 
 	// Convert back with type-safe helper
 	persistedSpecific := store.PersistedEvent{
-		AggregateType:    specificESEvent.AggregateType,
-		AggregateID:      specificESEvent.AggregateID,
-		EventType:        specificESEvent.EventType,
-		EventVersion:     specificESEvent.EventVersion,
-		EventID:          specificESEvent.EventID,
-		Payload:          specificESEvent.Payload,
-		Metadata:         specificESEvent.Metadata,
-		GlobalPosition:   1,
-		AggregateVersion: 1,
-		CreatedAt:        specificESEvent.CreatedAt,
+		StreamType:     specificESEvent.StreamType,
+		StreamID:       specificESEvent.StreamID,
+		EventType:      specificESEvent.EventType,
+		EventVersion:   specificESEvent.EventVersion,
+		EventID:        specificESEvent.EventID,
+		Payload:        specificESEvent.Payload,
+		Metadata:       specificESEvent.Metadata,
+		GlobalPosition: 1,
+		StreamVersion:  1,
+		CreatedAt:      specificESEvent.CreatedAt,
 	}
 
 	restoredSpecific, err := persistence.FromUserRegisteredV1(persistedSpecific)
@@ -244,7 +244,7 @@ func main() {
 	fmt.Println()
 	fmt.Println("Key Takeaways:")
 	fmt.Println("  - Use FromESEvent() in projection handlers to convert individual events")
-	fmt.Println("  - FromESEvents() is useful for batch processing or loading aggregate state")
+	fmt.Println("  - FromESEvents() is useful for batch processing or loading stream state")
 	fmt.Println("  - Type-safe helpers (ToXxxVn/FromXxxVn) for specific event versions")
 	fmt.Println("  - Options pattern for metadata injection (trace/correlation/causation IDs)")
 	fmt.Println()

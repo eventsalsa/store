@@ -9,10 +9,10 @@ import (
 
 // Compile-time interface compliance checks.
 var (
-	_ store.EventStore            = (*Store)(nil)
-	_ store.EventReader           = (*Store)(nil)
-	_ store.GlobalPositionReader  = (*Store)(nil)
-	_ store.AggregateStreamReader = (*Store)(nil)
+	_ store.EventStore           = (*Store)(nil)
+	_ store.EventReader          = (*Store)(nil)
+	_ store.GlobalPositionReader = (*Store)(nil)
+	_ store.StreamReader         = (*Store)(nil)
 )
 
 func TestWithNotifyChannel(t *testing.T) {

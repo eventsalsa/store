@@ -43,8 +43,8 @@ func main() {
 	// Create event store
 	eventStore := postgres.NewStore(postgres.DefaultStoreConfig())
 
-	// --- Example 1: Append events to a new aggregate ---
-	fmt.Println("--- Example 1: Create New Aggregate ---")
+	// --- Example 1: Append events to a new stream ---
+	fmt.Println("--- Example 1: Create New Stream ---")
 	userID := uuid.New().String()
 
 	payload1, err := json.Marshal(UserCreated{
@@ -57,14 +57,14 @@ func main() {
 
 	events := []store.Event{
 		{
-			AggregateType: "User",
-			AggregateID:   userID,
-			EventID:       uuid.New(),
-			EventType:     "UserCreated",
-			EventVersion:  1,
-			Payload:       payload1,
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "User",
+			StreamID:     userID,
+			EventID:      uuid.New(),
+			EventType:    "UserCreated",
+			EventVersion: 1,
+			Payload:      payload1,
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -87,9 +87,9 @@ func main() {
 	}
 
 	fmt.Printf("Events appended at positions: %v\n", result.GlobalPositions)
-	fmt.Printf("Aggregate is now at version: %d\n", result.ToVersion())
+	fmt.Printf("Stream is now at version: %d\n", result.ToVersion())
 
-	// --- Example 2: Append to existing aggregate with version check ---
+	// --- Example 2: Append to existing stream with version check ---
 	fmt.Println("\n--- Example 2: Append with Optimistic Concurrency ---")
 
 	payload2, err := json.Marshal(UserEmailChanged{
@@ -102,14 +102,14 @@ func main() {
 
 	events2 := []store.Event{
 		{
-			AggregateType: "User",
-			AggregateID:   userID,
-			EventID:       uuid.New(),
-			EventType:     "UserEmailChanged",
-			EventVersion:  1,
-			Payload:       payload2,
-			Metadata:      []byte(`{}`),
-			CreatedAt:     time.Now(),
+			StreamType:   "User",
+			StreamID:     userID,
+			EventID:      uuid.New(),
+			EventType:    "UserEmailChanged",
+			EventVersion: 1,
+			Payload:      payload2,
+			Metadata:     []byte(`{}`),
+			CreatedAt:    time.Now(),
 		},
 	}
 
@@ -133,8 +133,8 @@ func main() {
 
 	fmt.Printf("Events appended. Version: %d → %d\n", result.ToVersion(), result2.ToVersion())
 
-	// --- Example 3: Read aggregate stream ---
-	fmt.Println("\n--- Example 3: Read Aggregate Stream ---")
+	// --- Example 3: Read stream ---
+	fmt.Println("\n--- Example 3: Read Stream ---")
 
 	tx3, err := db.Begin(ctx)
 	if err != nil {
@@ -145,9 +145,9 @@ func main() {
 		_ = tx3.Rollback(ctx)
 	}()
 
-	stream, err := eventStore.ReadAggregateStream(ctx, tx3, "User", userID, nil, nil)
+	stream, err := eventStore.ReadStream(ctx, tx3, "User", userID, nil, nil)
 	if err != nil {
-		log.Fatalf("Failed to read aggregate stream: %v", err)
+		log.Fatalf("Failed to read stream: %v", err)
 	}
 
 	if err := tx3.Commit(ctx); err != nil {
@@ -157,7 +157,7 @@ func main() {
 	fmt.Printf("Stream: %d events, version %d\n", stream.Len(), stream.Version())
 	for i, event := range stream.Events {
 		fmt.Printf("  Event %d: %s (v%d) at position %d\n",
-			i+1, event.EventType, event.AggregateVersion, event.GlobalPosition)
+			i+1, event.EventType, event.StreamVersion, event.GlobalPosition)
 	}
 
 	// --- Example 4: Read events sequentially ---
@@ -184,6 +184,6 @@ func main() {
 	fmt.Printf("Read %d events from the global log\n", len(allEvents))
 	for _, event := range allEvents {
 		fmt.Printf("  Position %d: %s/%s.%s (v%d)\n",
-			event.GlobalPosition, event.AggregateType, event.AggregateID[:8], event.EventType, event.AggregateVersion)
+			event.GlobalPosition, event.StreamType, event.StreamID[:8], event.EventType, event.StreamVersion)
 	}
 }

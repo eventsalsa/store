@@ -25,10 +25,10 @@ func (p *mockGlobalConsumer) Handle(_ context.Context, _ pgx.Tx, event store.Per
 	return nil
 }
 
-// mockScopedConsumer is a consumer that only receives specific aggregate types
+// mockScopedConsumer is a consumer that only receives specific stream types
 type mockScopedConsumer struct {
 	name           string
-	aggregateTypes []string
+	streamTypes    []string
 	receivedEvents []store.PersistedEvent
 }
 
@@ -36,8 +36,8 @@ func (p *mockScopedConsumer) Name() string {
 	return p.name
 }
 
-func (p *mockScopedConsumer) AggregateTypes() []string {
-	return p.aggregateTypes
+func (p *mockScopedConsumer) StreamTypes() []string {
+	return p.streamTypes
 }
 
 //nolint:gocritic // hugeParam: Intentionally pass by value to enforce immutability
@@ -57,7 +57,7 @@ func TestScopedConsumer_Interface(_ *testing.T) {
 
 func TestScopedConsumer_TypeAssertion(t *testing.T) {
 	globalProj := &mockGlobalConsumer{name: "global"}
-	scopedProj := &mockScopedConsumer{name: "scoped", aggregateTypes: []string{"User"}}
+	scopedProj := &mockScopedConsumer{name: "scoped", streamTypes: []string{"User"}}
 
 	// Global consumer should not be a ScopedConsumer
 	if _, ok := Consumer(globalProj).(ScopedConsumer); ok {
@@ -70,15 +70,15 @@ func TestScopedConsumer_TypeAssertion(t *testing.T) {
 	}
 }
 
-func TestScopedConsumer_EmptyAggregateTypes(t *testing.T) {
+func TestScopedConsumer_EmptyStreamTypes(t *testing.T) {
 	scopedProj := &mockScopedConsumer{
-		name:           "scoped_empty",
-		aggregateTypes: []string{},
+		name:        "scoped_empty",
+		streamTypes: []string{},
 	}
 
-	types := scopedProj.AggregateTypes()
+	types := scopedProj.StreamTypes()
 	if types == nil {
-		t.Error("AggregateTypes should not return nil")
+		t.Error("StreamTypes should not return nil")
 	}
 	if len(types) != 0 {
 		t.Errorf("Expected empty slice, got %v", types)

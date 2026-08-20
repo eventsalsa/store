@@ -19,18 +19,18 @@ type Config struct {
 	// EventsTable is the name of the events table
 	EventsTable string
 
-	// AggregateHeadsTable is the name of the aggregate version tracking table
-	AggregateHeadsTable string
+	// StreamHeadsTable is the name of the stream version tracking table
+	StreamHeadsTable string
 }
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() Config {
 	timestamp := time.Now().Format("20060102150405")
 	return Config{
-		OutputFolder:        "migrations",
-		OutputFilename:      fmt.Sprintf("%s_init_event_sourcing.sql", timestamp),
-		EventsTable:         "events",
-		AggregateHeadsTable: "aggregate_heads",
+		OutputFolder:     "migrations",
+		OutputFilename:   fmt.Sprintf("%s_init_event_sourcing.sql", timestamp),
+		EventsTable:      "events",
+		StreamHeadsTable: "stream_heads",
 	}
 }
 
@@ -58,9 +58,9 @@ func generatePostgresSQL(config *Config) string {
 -- Events table stores all domain events in append-only fashion
 CREATE TABLE IF NOT EXISTS %s (
     global_position BIGSERIAL PRIMARY KEY,
-    aggregate_type TEXT NOT NULL,
-    aggregate_id TEXT NOT NULL,
-    aggregate_version BIGINT NOT NULL,
+    stream_type TEXT NOT NULL,
+    stream_id TEXT NOT NULL,
+    stream_version BIGINT NOT NULL,
     event_id UUID NOT NULL UNIQUE,
     event_type TEXT NOT NULL,
     event_version INT NOT NULL DEFAULT 1,
@@ -71,13 +71,13 @@ CREATE TABLE IF NOT EXISTS %s (
     metadata JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
-    -- Ensure version uniqueness per aggregate
-    UNIQUE (aggregate_type, aggregate_id, aggregate_version)
+    -- Ensure version uniqueness per stream
+    UNIQUE (stream_type, stream_id, stream_version)
 );
 
--- Index for aggregate stream reads
-CREATE INDEX IF NOT EXISTS idx_%s_aggregate 
-    ON %s (aggregate_type, aggregate_id, aggregate_version);
+-- Index for stream reads
+CREATE INDEX IF NOT EXISTS idx_%s_stream 
+    ON %s (stream_type, stream_id, stream_version);
 
 -- Index for event type queries
 CREATE INDEX IF NOT EXISTS idx_%s_event_type 
@@ -87,20 +87,20 @@ CREATE INDEX IF NOT EXISTS idx_%s_event_type
 CREATE INDEX IF NOT EXISTS idx_%s_correlation 
     ON %s (correlation_id) WHERE correlation_id IS NOT NULL;
 
--- Index for scoped sequential reads (aggregate_type + global_position)
-CREATE INDEX IF NOT EXISTS idx_%s_aggregate_type_position 
-    ON %s (aggregate_type, global_position);
+-- Index for scoped sequential reads (stream_type + global_position)
+CREATE INDEX IF NOT EXISTS idx_%s_stream_type_position 
+    ON %s (stream_type, global_position);
 
--- Aggregate heads table tracks the current version of each aggregate
+-- Stream heads table tracks the current version of each stream
 -- Provides O(1) version lookup for event append operations
--- Primary key (aggregate_type, aggregate_id) ensures one row per aggregate
+-- Primary key (stream_type, stream_id) ensures one row per stream
 CREATE TABLE IF NOT EXISTS %s (
-    aggregate_type TEXT NOT NULL,
-    aggregate_id TEXT NOT NULL,
-    aggregate_version BIGINT NOT NULL,
+    stream_type TEXT NOT NULL,
+    stream_id TEXT NOT NULL,
+    stream_version BIGINT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
-    PRIMARY KEY (aggregate_type, aggregate_id)
+    PRIMARY KEY (stream_type, stream_id)
 );
 
 -- Index for observability
@@ -113,7 +113,7 @@ CREATE INDEX IF NOT EXISTS idx_%s_updated
 		config.EventsTable, config.EventsTable,
 		config.EventsTable, config.EventsTable,
 		config.EventsTable, config.EventsTable,
-		config.AggregateHeadsTable,
-		config.AggregateHeadsTable, config.AggregateHeadsTable,
+		config.StreamHeadsTable,
+		config.StreamHeadsTable, config.StreamHeadsTable,
 	)
 }
