@@ -368,17 +368,15 @@ make test-unit
 **Integration tests (requires Docker):**
 
 ```bash
-make test-integration-local
+make test-integration
 ```
 
-This starts a PostgreSQL container via `docker compose`, runs all integration tests, then cleans up.
+Integration tests automatically launch and manage an isolated PostgreSQL container via [`testcontainers-go`](https://github.com/testcontainers/testcontainers-go).
 
-**Manual integration testing:**
+Or run via `go test` directly:
 
 ```bash
-docker compose up -d
-make test-integration
-docker compose down
+go test -p 1 -v -tags=integration ./...
 ```
 
 **Lint and format:**

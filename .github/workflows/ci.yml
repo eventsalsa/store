@@ -49,21 +49,6 @@ jobs:
     permissions:
       contents: read
     
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: eventsalsa_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -77,12 +62,6 @@ jobs:
       run: go mod download
 
     - name: Run integration tests
-      env:
-        POSTGRES_HOST: localhost
-        POSTGRES_PORT: 5432
-        POSTGRES_USER: postgres
-        POSTGRES_PASSWORD: postgres
-        POSTGRES_DB: eventsalsa_test
       run: go test -p 1 -v -tags=integration ./...
 
   lint:

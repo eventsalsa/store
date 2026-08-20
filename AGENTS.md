@@ -34,7 +34,7 @@ store/                     # Core types (Event, PersistedEvent, Stream, AppendRe
 ## Testing & Verification
 
 *   **Unit Tests**: `go test ./...`
-*   **Integration Tests** (requires PostgreSQL container): `go test -p 1 -v -tags=integration ./...`
+*   **Integration Tests** (uses testcontainers; requires Docker): `go test -p 1 -v -tags=integration ./...`
 *   **Linting**: `golangci-lint run`
 *   **Conventions**: Use standard Go `testing.T` assertions without third-party test assertion libraries. Keep integration tests isolated with `//go:build integration`.
 
