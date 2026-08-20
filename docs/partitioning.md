@@ -6,28 +6,7 @@
 
 ## Architecture Overview
 
-```
-                          ┌───────────────────────────┐
-                          │       stream_heads        │ (Unpartitioned Table)
-                          │ PRIMARY KEY (stream_type, │ -> Atomic stream reservation
-                          │              stream_id)   │    & optimistic concurrency
-                          └─────────────┬─────────────┘
-                                        │
-                                        │  Enforces stream_version contiguity & conflicts
-                                        ▼
-                          ┌───────────────────────────┐
-                          │          events           │ (Partitioned Parent Table)
-                          │ PARTITION BY RANGE        │ -> PRIMARY KEY (global_position)
-                          │ (global_position)         │
-                          └─────────────┬─────────────┘
-                                        │
-             ┌──────────────────────────┼──────────────────────────┐
-             ▼                          ▼                          ▼
-┌─────────────────────────┐┌─────────────────────────┐┌─────────────────────────┐
-│ events_p0000000001_...  ││ events_p0010000001_...  ││ events_p0020000001_...  │
-│ [1 .. 10,000,001)       ││ [10,000,001 .. 20,000,001)│ [20,000,001 .. 30,000,001)│
-└─────────────────────────┘└─────────────────────────┘└─────────────────────────┘
-```
+![PostgreSQL Declarative Range Partitioning Architecture](partitioning-architecture.jpeg)
 
 ### Why Partition on `global_position`?
 1. **Append-Only Monotonic Order**: All appends write sequentially into the newest partition. Older partition indexes become read-only and stay hot in the OS page cache.
