@@ -19,9 +19,10 @@ import (
 
 func main() {
 	var (
-		outputFolder   = flag.String("output", "migrations", "Output folder for migration file")
-		outputFilename = flag.String("filename", "", "Output filename (default: timestamp-based)")
-		eventsTable    = flag.String("events-table", "events", "Name of events table")
+		outputFolder     = flag.String("output", "migrations", "Output folder for migration file")
+		outputFilename   = flag.String("filename", "", "Output filename (default: timestamp-based)")
+		eventsTable      = flag.String("events-table", "events", "Name of events table")
+		streamHeadsTable = flag.String("stream-heads-table", "stream_heads", "Name of stream heads table")
 	)
 
 	flag.Parse()
@@ -29,6 +30,7 @@ func main() {
 	config := migrations.DefaultConfig()
 	config.OutputFolder = *outputFolder
 	config.EventsTable = *eventsTable
+	config.StreamHeadsTable = *streamHeadsTable
 
 	if *outputFilename != "" {
 		config.OutputFilename = *outputFilename

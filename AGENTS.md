@@ -10,7 +10,7 @@ This document defines the architecture, conventions, workflows, and skills used 
 
 *   **Clean Architecture**: Core interfaces are defined in the root `store` package, independent of any specific database driver.
 *   **Caller-Controlled Transactions**: All store methods accept `pgx.Tx` directly. Callers begin transactions and control commit/rollback boundaries; the library never commits or rolls back.
-*   **Optimistic Concurrency**: Built-in version conflict detection via database constraints and the `aggregate_heads` table.
+*   **Optimistic Concurrency**: Built-in version conflict detection via database constraints and the `stream_heads` table.
 *   **Immutable Events**: `Event` is a value object before persistence; `PersistedEvent` is the immutable record returned after storage.
 *   **Pull-Based Consumers**: Sequential event processing by global position using named, checkpointed consumers.
 
@@ -18,11 +18,11 @@ This document defines the architecture, conventions, workflows, and skills used 
 
 ```
 store/                     # Core types (Event, PersistedEvent, Stream, AppendResult)
-│                          # + store interfaces (EventStore, EventReader, AggregateStreamReader,
+│                          # + store interfaces (EventStore, EventReader, StreamReader,
 │                          #   GlobalPositionReader) + expected version helpers
 ├── consumer/              # Consumer and ScopedConsumer interfaces
 ├── postgres/              # PostgreSQL implementation of all store interfaces
-├── migrations/            # SQL migration generator (events + aggregate_heads tables)
+├── migrations/            # SQL migration generator (events + stream_heads tables)
 ├── eventmap/              # Code generator: maps domain event structs ↔ store.Event / store.PersistedEvent
 ├── cmd/
 │   ├── migrate-gen/       # CLI tool: generates SQL migration files
@@ -31,14 +31,12 @@ store/                     # Core types (Event, PersistedEvent, Stream, AppendRe
 
 ---
 
-## Workspace Skills
+## Testing & Verification
 
-The project defines granulated workspace skills located under `.agents/skills/`. Agents should refer to these skills when performing tasks:
-
-1.  **[Event Sourcing Design](file://.agents/skills/event-sourcing-design/SKILL.md)**: Architectural patterns, aggregate boundaries, expected version semantics, and projection designs.
-2.  **[Go Development](file://.agents/skills/go-development/SKILL.md)**: Coding conventions, naming, Go 1.23+ language features, transaction management, and interface-first design.
-3.  **[Go Testing](file://.agents/skills/go-testing/SKILL.md)**: Table-driven testing patterns, unit vs integration test separation, subtest isolation, and concurrency testing.
-4.  **[Code Review](file://.agents/skills/code-review/SKILL.md)**: Standard verification checklist, dead code eradication, and API quality validation.
+*   **Unit Tests**: `go test ./...`
+*   **Integration Tests** (requires PostgreSQL container): `go test -p 1 -v -tags=integration ./...`
+*   **Linting**: `golangci-lint run`
+*   **Conventions**: Use standard Go `testing.T` assertions without third-party test assertion libraries. Keep integration tests isolated with `//go:build integration`.
 
 ---
 
@@ -75,17 +73,17 @@ Commit messages must include a subject line and a detailed body explaining what 
 ### Appending Events
 
 ```go
-// Build events — AggregateVersion and GlobalPosition are assigned by the store
+// Build events — StreamVersion and GlobalPosition are assigned by the store
 events := []store.Event{
     {
-        AggregateType: "User",
-        AggregateID:   userID.String(),
-        EventID:       uuid.New(),
-        EventType:     "UserCreated",
-        EventVersion:  1,
-        Payload:       []byte(`{"email":"user@example.com"}`),
-        Metadata:      []byte(`{}`),
-        CreatedAt:     time.Now(),
+        StreamType:   "User",
+        StreamID:     userID.String(),
+        EventID:      uuid.New(),
+        EventType:    "UserCreated",
+        EventVersion: 1,
+        Payload:      []byte(`{"email":"user@example.com"}`),
+        Metadata:     []byte(`{}`),
+        CreatedAt:    time.Now(),
     },
 }
 
@@ -95,7 +93,7 @@ if err != nil {
     return err
 }
 
-// NoStream() enforces the aggregate must not already exist
+// NoStream() enforces the stream must not already exist
 result, err := eventStore.Append(ctx, tx, store.NoStream(), events)
 if err != nil {
     tx.Rollback(ctx)
@@ -113,32 +111,32 @@ newVersion := result.ToVersion()
 ### Expected Version Variants
 
 ```go
-// Aggregate must not exist (creation commands)
+// Stream must not exist (creation commands)
 result, err := eventStore.Append(ctx, tx, store.NoStream(), events)
 
-// Aggregate must be at a specific version (update commands with optimistic concurrency)
+// Stream must be at a specific version (update commands with optimistic concurrency)
 result, err := eventStore.Append(ctx, tx, store.Exact(currentVersion), events)
 
 // No version check (use sparingly — bypasses optimistic concurrency)
 result, err := eventStore.Append(ctx, tx, store.Any(), events)
 ```
 
-### Reading Aggregate Streams
+### Reading Streams
 
 ```go
-// Read all events for an aggregate
-stream, err := eventStore.ReadAggregateStream(ctx, tx, "User", aggregateID, nil, nil)
+// Read all events for a stream
+stream, err := eventStore.ReadStream(ctx, tx, "User", streamID, nil, nil)
 if err != nil {
     return err
 }
 
 if stream.IsEmpty() {
-    // Aggregate does not exist
+    // Stream does not exist
 }
 
 currentVersion := stream.Version()
 
 for _, event := range stream.Events {
-    // Reconstruct aggregate state from event
+    // Reconstruct stream state from event
 }
 ```

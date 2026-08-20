@@ -44,12 +44,12 @@ func (ns NullString) Value() (driver.Value, error) {
 
 // Event represents an immutable domain event before persistence.
 // Events are value objects without identity until persisted.
-// AggregateVersion and GlobalPosition are assigned by the store during Append.
+// StreamVersion and GlobalPosition are assigned by the store during Append.
 type Event struct {
 	CreatedAt     time.Time
-	AggregateType string
+	StreamType    string
 	EventType     string
-	AggregateID   string
+	StreamID      string
 	Payload       []byte
 	Metadata      []byte
 	CausationID   NullString
@@ -60,40 +60,40 @@ type Event struct {
 }
 
 // PersistedEvent represents an event that has been stored.
-// It includes the GlobalPosition and AggregateVersion assigned by the event store.
+// It includes the GlobalPosition and StreamVersion assigned by the event store.
 type PersistedEvent struct {
-	CreatedAt        time.Time
-	AggregateType    string
-	EventType        string
-	AggregateID      string
-	CausationID      NullString
-	Metadata         []byte
-	Payload          []byte
-	CorrelationID    NullString
-	TraceID          NullString
-	GlobalPosition   int64
-	AggregateVersion int64
-	EventVersion     int
-	EventID          uuid.UUID
+	CreatedAt      time.Time
+	StreamType     string
+	EventType      string
+	StreamID       string
+	CausationID    NullString
+	Metadata       []byte
+	Payload        []byte
+	CorrelationID  NullString
+	TraceID        NullString
+	GlobalPosition int64
+	StreamVersion  int64
+	EventVersion   int
+	EventID        uuid.UUID
 }
 
-// Stream represents the full historical event stream for a single aggregate.
+// Stream represents the full historical event stream for a single stream.
 // It is immutable after creation and is returned from read operations.
 // Stream must never be returned from Append operations.
 type Stream struct {
-	AggregateType string
-	AggregateID   string
-	Events        []PersistedEvent
+	StreamType string
+	StreamID   string
+	Events     []PersistedEvent
 }
 
-// Version returns the current version of the aggregate.
+// Version returns the current version of the stream.
 // If the stream is empty (no events), version is 0.
-// Otherwise, version is the AggregateVersion of the last event in the stream.
+// Otherwise, version is the StreamVersion of the last event in the stream.
 func (s Stream) Version() int64 {
 	if len(s.Events) == 0 {
 		return 0
 	}
-	return s.Events[len(s.Events)-1].AggregateVersion
+	return s.Events[len(s.Events)-1].StreamVersion
 }
 
 // IsEmpty returns true if the stream contains no events.
@@ -114,22 +114,22 @@ type AppendResult struct {
 	GlobalPositions []int64
 }
 
-// FromVersion returns the aggregate version before the append.
+// FromVersion returns the stream version before the append.
 // If no events were appended, returns 0.
 // Otherwise, returns the version immediately before the first appended event.
 func (r AppendResult) FromVersion() int64 {
 	if len(r.Events) == 0 {
 		return 0
 	}
-	return r.Events[0].AggregateVersion - 1
+	return r.Events[0].StreamVersion - 1
 }
 
-// ToVersion returns the aggregate version after the append.
+// ToVersion returns the stream version after the append.
 // If no events were appended, returns 0.
-// Otherwise, returns the AggregateVersion of the last appended event.
+// Otherwise, returns the StreamVersion of the last appended event.
 func (r AppendResult) ToVersion() int64 {
 	if len(r.Events) == 0 {
 		return 0
 	}
-	return r.Events[len(r.Events)-1].AggregateVersion
+	return r.Events[len(r.Events)-1].StreamVersion
 }

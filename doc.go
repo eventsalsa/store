@@ -3,8 +3,8 @@
 // This package defines the fundamental building blocks for event sourcing:
 //
 //   - Event types: Event (before persistence) and PersistedEvent (after persistence)
-//   - Stream: Full history for a single aggregate
-//   - Store interfaces: EventStore, EventReader, AggregateStreamReader
+//   - Stream: Full history for a single stream
+//   - Store interfaces: EventStore, EventReader, StreamReader
 //   - Optimistic concurrency: ExpectedVersion with Any, NoStream, and Exact modes
 //   - Observability: Logger interface for optional structured logging
 //

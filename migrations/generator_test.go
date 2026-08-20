@@ -11,10 +11,10 @@ func TestGeneratePostgres(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	config := Config{
-		OutputFolder:        tmpDir,
-		OutputFilename:      "test_migration.sql",
-		EventsTable:         "events",
-		AggregateHeadsTable: "aggregate_heads",
+		OutputFolder:     tmpDir,
+		OutputFilename:   "test_migration.sql",
+		EventsTable:      "events",
+		StreamHeadsTable: "stream_heads",
 	}
 
 	err := GeneratePostgres(&config)
@@ -35,9 +35,9 @@ func TestGeneratePostgres(t *testing.T) {
 	requiredStrings := []string{
 		"CREATE TABLE IF NOT EXISTS events",
 		"global_position BIGSERIAL PRIMARY KEY",
-		"aggregate_type TEXT NOT NULL",
-		"aggregate_id TEXT NOT NULL",
-		"aggregate_version BIGINT NOT NULL",
+		"stream_type TEXT NOT NULL",
+		"stream_id TEXT NOT NULL",
+		"stream_version BIGINT NOT NULL",
 		"event_id UUID NOT NULL UNIQUE",
 		"event_type TEXT NOT NULL",
 		"event_version INT NOT NULL DEFAULT 1",
@@ -47,7 +47,7 @@ func TestGeneratePostgres(t *testing.T) {
 		"causation_id TEXT",
 		"metadata JSONB",
 		"created_at TIMESTAMPTZ NOT NULL",
-		"CREATE TABLE IF NOT EXISTS aggregate_heads",
+		"CREATE TABLE IF NOT EXISTS stream_heads",
 	}
 
 	for _, required := range requiredStrings {
@@ -58,10 +58,10 @@ func TestGeneratePostgres(t *testing.T) {
 
 	// Verify indexes are created
 	requiredIndexes := []string{
-		"idx_events_aggregate",
+		"idx_events_stream",
 		"idx_events_event_type",
 		"idx_events_correlation",
-		"idx_events_aggregate_type_position",
+		"idx_events_stream_type_position",
 	}
 
 	for _, idx := range requiredIndexes {
@@ -84,13 +84,13 @@ func TestGeneratePostgres(t *testing.T) {
 	}
 
 	// Verify correct unique constraint on events (no bounded_context)
-	if !strings.Contains(sql, "UNIQUE (aggregate_type, aggregate_id, aggregate_version)") {
+	if !strings.Contains(sql, "UNIQUE (stream_type, stream_id, stream_version)") {
 		t.Error("Generated SQL missing correct unique constraint on events")
 	}
 
-	// Verify correct primary key on aggregate_heads (no bounded_context)
-	if !strings.Contains(sql, "PRIMARY KEY (aggregate_type, aggregate_id)") {
-		t.Error("Generated SQL missing correct primary key on aggregate_heads")
+	// Verify correct primary key on stream_heads (no bounded_context)
+	if !strings.Contains(sql, "PRIMARY KEY (stream_type, stream_id)") {
+		t.Error("Generated SQL missing correct primary key on stream_heads")
 	}
 }
 
@@ -98,10 +98,10 @@ func TestGeneratePostgres_CustomTableNames(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	config := Config{
-		OutputFolder:        tmpDir,
-		OutputFilename:      "custom_migration.sql",
-		EventsTable:         "custom_events",
-		AggregateHeadsTable: "custom_aggregate_heads",
+		OutputFolder:     tmpDir,
+		OutputFilename:   "custom_migration.sql",
+		EventsTable:      "custom_events",
+		StreamHeadsTable: "custom_stream_heads",
 	}
 
 	err := GeneratePostgres(&config)
@@ -121,7 +121,7 @@ func TestGeneratePostgres_CustomTableNames(t *testing.T) {
 	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS custom_events") {
 		t.Error("Custom events table name not used")
 	}
-	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS custom_aggregate_heads") {
-		t.Error("Custom aggregate_heads table name not used")
+	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS custom_stream_heads") {
+		t.Error("Custom stream_heads table name not used")
 	}
 }

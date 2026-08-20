@@ -154,8 +154,8 @@ func TestRoundTripV1(t *testing.T) {
 	esEvent := esEvents[0]
 
 	// Verify event properties
-	if esEvent.AggregateType != "Order" {
-		t.Errorf("Expected AggregateType=Order, got %s", esEvent.AggregateType)
+	if esEvent.StreamType != "Order" {
+		t.Errorf("Expected StreamType=Order, got %s", esEvent.StreamType)
 	}
 	if esEvent.EventType != "OrderCreated" {
 		t.Errorf("Expected EventType=OrderCreated, got %s", esEvent.EventType)
@@ -166,19 +166,19 @@ func TestRoundTripV1(t *testing.T) {
 
 	// Convert to PersistedEvent (simulate database storage)
 	persistedEvent := store.PersistedEvent{
-		CreatedAt:        esEvent.CreatedAt,
-		AggregateType:    esEvent.AggregateType,
-		EventType:        esEvent.EventType,
-		AggregateID:      esEvent.AggregateID,
-		CausationID:      esEvent.CausationID,
-		Metadata:         esEvent.Metadata,
-		Payload:          esEvent.Payload,
-		CorrelationID:    esEvent.CorrelationID,
-		TraceID:          esEvent.TraceID,
-		GlobalPosition:   1,
-		AggregateVersion: 1,
-		EventVersion:     esEvent.EventVersion,
-		EventID:          esEvent.EventID,
+		CreatedAt:      esEvent.CreatedAt,
+		StreamType:     esEvent.StreamType,
+		EventType:      esEvent.EventType,
+		StreamID:       esEvent.StreamID,
+		CausationID:    esEvent.CausationID,
+		Metadata:       esEvent.Metadata,
+		Payload:        esEvent.Payload,
+		CorrelationID:  esEvent.CorrelationID,
+		TraceID:        esEvent.TraceID,
+		GlobalPosition: 1,
+		StreamVersion:  1,
+		EventVersion:   esEvent.EventVersion,
+		EventID:        esEvent.EventID,
 	}
 
 	// Convert back to domain event
@@ -237,19 +237,19 @@ func TestRoundTripV2(t *testing.T) {
 
 	// Convert to PersistedEvent
 	persistedEvent := store.PersistedEvent{
-		CreatedAt:        esEvent.CreatedAt,
-		AggregateType:    esEvent.AggregateType,
-		EventType:        esEvent.EventType,
-		AggregateID:      esEvent.AggregateID,
-		CausationID:      esEvent.CausationID,
-		Metadata:         esEvent.Metadata,
-		Payload:          esEvent.Payload,
-		CorrelationID:    esEvent.CorrelationID,
-		TraceID:          esEvent.TraceID,
-		GlobalPosition:   2,
-		AggregateVersion: 1,
-		EventVersion:     esEvent.EventVersion,
-		EventID:          esEvent.EventID,
+		CreatedAt:      esEvent.CreatedAt,
+		StreamType:     esEvent.StreamType,
+		EventType:      esEvent.EventType,
+		StreamID:       esEvent.StreamID,
+		CausationID:    esEvent.CausationID,
+		Metadata:       esEvent.Metadata,
+		Payload:        esEvent.Payload,
+		CorrelationID:  esEvent.CorrelationID,
+		TraceID:        esEvent.TraceID,
+		GlobalPosition: 2,
+		StreamVersion:  1,
+		EventVersion:   esEvent.EventVersion,
+		EventID:        esEvent.EventID,
 	}
 
 	// Convert back to domain event
@@ -295,19 +295,19 @@ func TestIntegrationTypeHelpers(t *testing.T) {
 
 	// Convert to persisted event
 	persistedEvent := store.PersistedEvent{
-		CreatedAt:        esEvent.CreatedAt,
-		AggregateType:    esEvent.AggregateType,
-		EventType:        esEvent.EventType,
-		AggregateID:      esEvent.AggregateID,
-		CausationID:      esEvent.CausationID,
-		Metadata:         esEvent.Metadata,
-		Payload:          esEvent.Payload,
-		CorrelationID:    esEvent.CorrelationID,
-		TraceID:          esEvent.TraceID,
-		GlobalPosition:   1,
-		AggregateVersion: 1,
-		EventVersion:     esEvent.EventVersion,
-		EventID:          esEvent.EventID,
+		CreatedAt:      esEvent.CreatedAt,
+		StreamType:     esEvent.StreamType,
+		EventType:      esEvent.EventType,
+		StreamID:       esEvent.StreamID,
+		CausationID:    esEvent.CausationID,
+		Metadata:       esEvent.Metadata,
+		Payload:        esEvent.Payload,
+		CorrelationID:  esEvent.CorrelationID,
+		TraceID:        esEvent.TraceID,
+		GlobalPosition: 1,
+		StreamVersion:  1,
+		EventVersion:   esEvent.EventVersion,
+		EventID:        esEvent.EventID,
 	}
 
 	// Use type-safe conversion back
@@ -354,16 +354,16 @@ func TestIntegrationOptions(t *testing.T) {
 func TestUnknownEventType(t *testing.T) {
 	// Create a persisted event with unknown type
 	persistedEvent := store.PersistedEvent{
-		CreatedAt:        time.Now(),
-		AggregateType:    "Order",
-		EventType:        "UnknownEvent",
-		AggregateID:      "order-123",
-		Payload:          []byte("{}"),
-		Metadata:         []byte("{}"),
-		GlobalPosition:   1,
-		AggregateVersion: 1,
-		EventVersion:     1,
-		EventID:          uuid.New(),
+		CreatedAt:      time.Now(),
+		StreamType:     "Order",
+		EventType:      "UnknownEvent",
+		StreamID:       "order-123",
+		Payload:        []byte("{}"),
+		Metadata:       []byte("{}"),
+		GlobalPosition: 1,
+		StreamVersion:  1,
+		EventVersion:   1,
+		EventID:        uuid.New(),
 	}
 
 	// Should fail with unknown event type
@@ -385,16 +385,16 @@ func TestUnknownEventVersion(t *testing.T) {
 	esEvent := esEvents[0]
 
 	persistedEvent := store.PersistedEvent{
-		CreatedAt:        esEvent.CreatedAt,
-		AggregateType:    esEvent.AggregateType,
-		EventType:        esEvent.EventType,
-		AggregateID:      esEvent.AggregateID,
-		Payload:          esEvent.Payload,
-		Metadata:         esEvent.Metadata,
-		GlobalPosition:   1,
-		AggregateVersion: 1,
-		EventVersion:     99, // Unknown version
-		EventID:          esEvent.EventID,
+		CreatedAt:      esEvent.CreatedAt,
+		StreamType:     esEvent.StreamType,
+		EventType:      esEvent.EventType,
+		StreamID:       esEvent.StreamID,
+		Payload:        esEvent.Payload,
+		Metadata:       esEvent.Metadata,
+		GlobalPosition: 1,
+		StreamVersion:  1,
+		EventVersion:   99, // Unknown version
+		EventID:        esEvent.EventID,
 	}
 
 	// Should fail with unknown version

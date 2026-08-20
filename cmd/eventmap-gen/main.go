@@ -28,7 +28,7 @@
 //
 // The tool generates:
 //   - EventTypeOf(e any) - Resolves event type string from domain event
-//   - ToESEvents(aggregateType, aggregateID, events, opts...) - Converts domain events to store.Event
+//   - ToESEvents(streamType, streamID, events, opts...) - Converts domain events to store.Event
 //   - FromESEvents[T](events) - Converts store.PersistedEvent to domain events (using generics)
 //   - Type-safe helpers per event (ToUserRegisteredV1, FromUserRegisteredV1, etc.)
 //

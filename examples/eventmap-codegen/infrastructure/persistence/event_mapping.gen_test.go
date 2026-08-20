@@ -93,8 +93,8 @@ func TestEventTypeOf(t *testing.T) {
 
 // TestToESEvents tests the ToESEvents function with generics.
 func TestToESEvents(t *testing.T) {
-	aggregateType := "TestAggregate"
-	aggregateID := uuid.New().String()
+	streamType := "TestStream"
+	streamID := uuid.New().String()
 
 	// Create a domain event
 	domainEvent := v1.UserDeleted{}
@@ -102,7 +102,7 @@ func TestToESEvents(t *testing.T) {
 	// Test with slice of specific type (not []any)
 	events := []v1.UserDeleted{domainEvent}
 
-	esEvents, err := ToESEvents(aggregateType, aggregateID, events)
+	esEvents, err := ToESEvents(streamType, streamID, events)
 	if err != nil {
 		t.Fatalf("ToESEvents() failed: %v", err)
 	}
@@ -114,11 +114,11 @@ func TestToESEvents(t *testing.T) {
 	esEvent := esEvents[0]
 
 	// Verify event properties
-	if esEvent.AggregateType != aggregateType {
-		t.Errorf("AggregateType = %s, want %s", esEvent.AggregateType, aggregateType)
+	if esEvent.StreamType != streamType {
+		t.Errorf("StreamType = %s, want %s", esEvent.StreamType, streamType)
 	}
-	if esEvent.AggregateID != aggregateID {
-		t.Errorf("AggregateID = %s, want %s", esEvent.AggregateID, aggregateID)
+	if esEvent.StreamID != streamID {
+		t.Errorf("StreamID = %s, want %s", esEvent.StreamID, streamID)
 	}
 	if esEvent.EventType != "UserDeleted" {
 		t.Errorf("EventType = %s, want %s", esEvent.EventType, "UserDeleted")
@@ -138,16 +138,16 @@ func TestToESEvents(t *testing.T) {
 func TestFromESEvents(t *testing.T) {
 	// Create a persisted event
 	persistedEvent := store.PersistedEvent{
-		CreatedAt:        time.Now(),
-		AggregateType:    "TestAggregate",
-		EventType:        "UserDeleted",
-		AggregateID:      uuid.New().String(),
-		Payload:          []byte("{}"),
-		Metadata:         []byte("{}"),
-		GlobalPosition:   1,
-		AggregateVersion: 1,
-		EventVersion:     1,
-		EventID:          uuid.New(),
+		CreatedAt:      time.Now(),
+		StreamType:     "TestStream",
+		EventType:      "UserDeleted",
+		StreamID:       uuid.New().String(),
+		Payload:        []byte("{}"),
+		Metadata:       []byte("{}"),
+		GlobalPosition: 1,
+		StreamVersion:  1,
+		EventVersion:   1,
+		EventID:        uuid.New(),
 	}
 
 	// Convert to domain events
@@ -169,15 +169,15 @@ func TestFromESEvents(t *testing.T) {
 
 // TestOptions tests the Options pattern.
 func TestOptions(t *testing.T) {
-	aggregateType := "TestAggregate"
-	aggregateID := uuid.New().String()
+	streamType := "TestStream"
+	streamID := uuid.New().String()
 
 	domainEvent := v1.UserDeleted{}
 
 	// Use options
 	esEvents, err := ToESEvents(
-		aggregateType,
-		aggregateID,
+		streamType,
+		streamID,
 		[]v1.UserDeleted{domainEvent},
 		WithCausationID("causation-123"),
 		WithCorrelationID("correlation-456"),
@@ -211,13 +211,13 @@ func TestOptions(t *testing.T) {
 
 // TestTypeHelpers tests type-specific helper functions.
 func TestTypeHelpers(t *testing.T) {
-	aggregateType := "TestAggregate"
-	aggregateID := uuid.New().String()
+	streamType := "TestStream"
+	streamID := uuid.New().String()
 
 	domainEvent := v1.UserDeleted{}
 
 	// Test To helper
-	esEvent, err := ToUserDeletedV1(aggregateType, aggregateID, domainEvent)
+	esEvent, err := ToUserDeletedV1(streamType, streamID, domainEvent)
 	if err != nil {
 		t.Fatalf("ToUserDeletedV1() failed: %v", err)
 	}
@@ -231,19 +231,19 @@ func TestTypeHelpers(t *testing.T) {
 
 	// Convert to persisted event
 	persistedEvent := store.PersistedEvent{
-		CreatedAt:        esEvent.CreatedAt,
-		AggregateType:    esEvent.AggregateType,
-		EventType:        esEvent.EventType,
-		AggregateID:      esEvent.AggregateID,
-		Payload:          esEvent.Payload,
-		Metadata:         esEvent.Metadata,
-		CausationID:      esEvent.CausationID,
-		CorrelationID:    esEvent.CorrelationID,
-		TraceID:          esEvent.TraceID,
-		GlobalPosition:   1,
-		AggregateVersion: 1,
-		EventVersion:     esEvent.EventVersion,
-		EventID:          esEvent.EventID,
+		CreatedAt:      esEvent.CreatedAt,
+		StreamType:     esEvent.StreamType,
+		EventType:      esEvent.EventType,
+		StreamID:       esEvent.StreamID,
+		Payload:        esEvent.Payload,
+		Metadata:       esEvent.Metadata,
+		CausationID:    esEvent.CausationID,
+		CorrelationID:  esEvent.CorrelationID,
+		TraceID:        esEvent.TraceID,
+		GlobalPosition: 1,
+		StreamVersion:  1,
+		EventVersion:   esEvent.EventVersion,
+		EventID:        esEvent.EventID,
 	}
 
 	// Test From helper
@@ -260,16 +260,16 @@ func TestTypeHelpers(t *testing.T) {
 func TestErrorCases(t *testing.T) {
 	t.Run("UnknownEventType", func(t *testing.T) {
 		persistedEvent := store.PersistedEvent{
-			CreatedAt:        time.Now(),
-			AggregateType:    "TestAggregate",
-			EventType:        "UnknownEvent",
-			AggregateID:      uuid.New().String(),
-			Payload:          []byte("{}"),
-			Metadata:         []byte("{}"),
-			GlobalPosition:   1,
-			AggregateVersion: 1,
-			EventVersion:     1,
-			EventID:          uuid.New(),
+			CreatedAt:      time.Now(),
+			StreamType:     "TestStream",
+			EventType:      "UnknownEvent",
+			StreamID:       uuid.New().String(),
+			Payload:        []byte("{}"),
+			Metadata:       []byte("{}"),
+			GlobalPosition: 1,
+			StreamVersion:  1,
+			EventVersion:   1,
+			EventID:        uuid.New(),
 		}
 
 		_, err := FromESEvents[any]([]store.PersistedEvent{persistedEvent})
@@ -280,16 +280,16 @@ func TestErrorCases(t *testing.T) {
 
 	t.Run("InvalidJSON", func(t *testing.T) {
 		persistedEvent := store.PersistedEvent{
-			CreatedAt:        time.Now(),
-			AggregateType:    "TestAggregate",
-			EventType:        "UserDeleted",
-			AggregateID:      uuid.New().String(),
-			Payload:          []byte("invalid json"),
-			Metadata:         []byte("{}"),
-			GlobalPosition:   1,
-			AggregateVersion: 1,
-			EventVersion:     1,
-			EventID:          uuid.New(),
+			CreatedAt:      time.Now(),
+			StreamType:     "TestStream",
+			EventType:      "UserDeleted",
+			StreamID:       uuid.New().String(),
+			Payload:        []byte("invalid json"),
+			Metadata:       []byte("{}"),
+			GlobalPosition: 1,
+			StreamVersion:  1,
+			EventVersion:   1,
+			EventID:        uuid.New(),
 		}
 
 		_, err := FromESEvents[any]([]store.PersistedEvent{persistedEvent})

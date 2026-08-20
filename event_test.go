@@ -16,19 +16,19 @@ func TestStream_Version(t *testing.T) {
 		{
 			name: "empty stream returns version 0",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
-				Events:        []PersistedEvent{},
+				StreamType: "User",
+				StreamID:   "123",
+				Events:     []PersistedEvent{},
 			},
 			want: 0,
 		},
 		{
 			name: "stream with one event returns that event's version",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
+				StreamType: "User",
+				StreamID:   "123",
 				Events: []PersistedEvent{
-					{AggregateVersion: 1},
+					{StreamVersion: 1},
 				},
 			},
 			want: 1,
@@ -36,12 +36,12 @@ func TestStream_Version(t *testing.T) {
 		{
 			name: "stream with multiple events returns last event's version",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
+				StreamType: "User",
+				StreamID:   "123",
 				Events: []PersistedEvent{
-					{AggregateVersion: 1},
-					{AggregateVersion: 2},
-					{AggregateVersion: 3},
+					{StreamVersion: 1},
+					{StreamVersion: 2},
+					{StreamVersion: 3},
 				},
 			},
 			want: 3,
@@ -66,28 +66,28 @@ func TestStream_IsEmpty(t *testing.T) {
 		{
 			name: "empty stream returns true",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
-				Events:        []PersistedEvent{},
+				StreamType: "User",
+				StreamID:   "123",
+				Events:     []PersistedEvent{},
 			},
 			want: true,
 		},
 		{
 			name: "nil events slice returns true",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
-				Events:        nil,
+				StreamType: "User",
+				StreamID:   "123",
+				Events:     nil,
 			},
 			want: true,
 		},
 		{
 			name: "stream with events returns false",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
+				StreamType: "User",
+				StreamID:   "123",
 				Events: []PersistedEvent{
-					{AggregateVersion: 1},
+					{StreamVersion: 1},
 				},
 			},
 			want: false,
@@ -112,28 +112,28 @@ func TestStream_Len(t *testing.T) {
 		{
 			name: "empty stream returns 0",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
-				Events:        []PersistedEvent{},
+				StreamType: "User",
+				StreamID:   "123",
+				Events:     []PersistedEvent{},
 			},
 			want: 0,
 		},
 		{
 			name: "nil events slice returns 0",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
-				Events:        nil,
+				StreamType: "User",
+				StreamID:   "123",
+				Events:     nil,
 			},
 			want: 0,
 		},
 		{
 			name: "stream with one event returns 1",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
+				StreamType: "User",
+				StreamID:   "123",
 				Events: []PersistedEvent{
-					{AggregateVersion: 1},
+					{StreamVersion: 1},
 				},
 			},
 			want: 1,
@@ -141,12 +141,12 @@ func TestStream_Len(t *testing.T) {
 		{
 			name: "stream with multiple events returns correct count",
 			stream: Stream{
-				AggregateType: "User",
-				AggregateID:   "123",
+				StreamType: "User",
+				StreamID:   "123",
 				Events: []PersistedEvent{
-					{AggregateVersion: 1},
-					{AggregateVersion: 2},
-					{AggregateVersion: 3},
+					{StreamVersion: 1},
+					{StreamVersion: 2},
+					{StreamVersion: 3},
 				},
 			},
 			want: 3,
@@ -180,7 +180,7 @@ func TestAppendResult_FromVersion(t *testing.T) {
 			name: "single event at version 1 returns 0 (no previous version)",
 			result: AppendResult{
 				Events: []PersistedEvent{
-					{AggregateVersion: 1},
+					{StreamVersion: 1},
 				},
 				GlobalPositions: []int64{1},
 			},
@@ -190,7 +190,7 @@ func TestAppendResult_FromVersion(t *testing.T) {
 			name: "single event at version 5 returns 4",
 			result: AppendResult{
 				Events: []PersistedEvent{
-					{AggregateVersion: 5},
+					{StreamVersion: 5},
 				},
 				GlobalPositions: []int64{10},
 			},
@@ -200,9 +200,9 @@ func TestAppendResult_FromVersion(t *testing.T) {
 			name: "multiple events starting at version 3 returns 2",
 			result: AppendResult{
 				Events: []PersistedEvent{
-					{AggregateVersion: 3},
-					{AggregateVersion: 4},
-					{AggregateVersion: 5},
+					{StreamVersion: 3},
+					{StreamVersion: 4},
+					{StreamVersion: 5},
 				},
 				GlobalPositions: []int64{10, 11, 12},
 			},
@@ -237,7 +237,7 @@ func TestAppendResult_ToVersion(t *testing.T) {
 			name: "single event returns that event's version",
 			result: AppendResult{
 				Events: []PersistedEvent{
-					{AggregateVersion: 1},
+					{StreamVersion: 1},
 				},
 				GlobalPositions: []int64{1},
 			},
@@ -247,9 +247,9 @@ func TestAppendResult_ToVersion(t *testing.T) {
 			name: "multiple events returns last event's version",
 			result: AppendResult{
 				Events: []PersistedEvent{
-					{AggregateVersion: 3},
-					{AggregateVersion: 4},
-					{AggregateVersion: 5},
+					{StreamVersion: 3},
+					{StreamVersion: 4},
+					{StreamVersion: 5},
 				},
 				GlobalPositions: []int64{10, 11, 12},
 			},
@@ -267,18 +267,18 @@ func TestAppendResult_ToVersion(t *testing.T) {
 }
 
 func TestAppendResult_FullWorkflow(t *testing.T) {
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 
-	// First append - creating new aggregate
+	// First append - creating new stream
 	result1 := AppendResult{
 		Events: []PersistedEvent{
 			{
-				AggregateType:    "User",
-				AggregateID:      aggregateID,
-				AggregateVersion: 1,
-				EventType:        "UserCreated",
-				GlobalPosition:   100,
-				CreatedAt:        time.Now(),
+				StreamType:     "User",
+				StreamID:       streamID,
+				StreamVersion:  1,
+				EventType:      "UserCreated",
+				GlobalPosition: 100,
+				CreatedAt:      time.Now(),
 			},
 		},
 		GlobalPositions: []int64{100},
@@ -291,24 +291,24 @@ func TestAppendResult_FullWorkflow(t *testing.T) {
 		t.Errorf("First append ToVersion() = %v, want 1", result1.ToVersion())
 	}
 
-	// Second append - updating existing aggregate
+	// Second append - updating existing stream
 	result2 := AppendResult{
 		Events: []PersistedEvent{
 			{
-				AggregateType:    "User",
-				AggregateID:      aggregateID,
-				AggregateVersion: 2,
-				EventType:        "UserUpdated",
-				GlobalPosition:   101,
-				CreatedAt:        time.Now(),
+				StreamType:     "User",
+				StreamID:       streamID,
+				StreamVersion:  2,
+				EventType:      "UserUpdated",
+				GlobalPosition: 101,
+				CreatedAt:      time.Now(),
 			},
 			{
-				AggregateType:    "User",
-				AggregateID:      aggregateID,
-				AggregateVersion: 3,
-				EventType:        "UserActivated",
-				GlobalPosition:   102,
-				CreatedAt:        time.Now(),
+				StreamType:     "User",
+				StreamID:       streamID,
+				StreamVersion:  3,
+				EventType:      "UserActivated",
+				GlobalPosition: 102,
+				CreatedAt:      time.Now(),
 			},
 		},
 		GlobalPositions: []int64{101, 102},
@@ -323,35 +323,35 @@ func TestAppendResult_FullWorkflow(t *testing.T) {
 }
 
 func TestStream_FullWorkflow(t *testing.T) {
-	aggregateID := uuid.New().String()
+	streamID := uuid.New().String()
 
 	stream := Stream{
-		AggregateType: "User",
-		AggregateID:   aggregateID,
+		StreamType: "User",
+		StreamID:   streamID,
 		Events: []PersistedEvent{
 			{
-				AggregateType:    "User",
-				AggregateID:      aggregateID,
-				AggregateVersion: 1,
-				EventType:        "UserCreated",
-				GlobalPosition:   100,
-				CreatedAt:        time.Now(),
+				StreamType:     "User",
+				StreamID:       streamID,
+				StreamVersion:  1,
+				EventType:      "UserCreated",
+				GlobalPosition: 100,
+				CreatedAt:      time.Now(),
 			},
 			{
-				AggregateType:    "User",
-				AggregateID:      aggregateID,
-				AggregateVersion: 2,
-				EventType:        "UserUpdated",
-				GlobalPosition:   101,
-				CreatedAt:        time.Now(),
+				StreamType:     "User",
+				StreamID:       streamID,
+				StreamVersion:  2,
+				EventType:      "UserUpdated",
+				GlobalPosition: 101,
+				CreatedAt:      time.Now(),
 			},
 			{
-				AggregateType:    "User",
-				AggregateID:      aggregateID,
-				AggregateVersion: 3,
-				EventType:        "UserActivated",
-				GlobalPosition:   102,
-				CreatedAt:        time.Now(),
+				StreamType:     "User",
+				StreamID:       streamID,
+				StreamVersion:  3,
+				EventType:      "UserActivated",
+				GlobalPosition: 102,
+				CreatedAt:      time.Now(),
 			},
 		},
 	}
