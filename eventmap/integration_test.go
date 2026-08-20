@@ -43,7 +43,7 @@ type OrderCancelled struct {
 		t.Fatalf("Failed to write v1 events: %v", err)
 	}
 
-	// Write v2 events (OrderCreated with additional field)
+	// Write v2 events (OrderCreated with additional field, and OrderShipped with complex types)
 	v2Code := `package v2
 
 type OrderCreated struct {
@@ -52,6 +52,13 @@ type OrderCreated struct {
 	Amount     float64 ` + "`json:\"amount\"`" + `
 	Currency   string  ` + "`json:\"currency\"`" + `
 	TaxAmount  float64 ` + "`json:\"tax_amount\"`" + `
+}
+
+type OrderShipped struct {
+	OrderID      string            ` + "`json:\"order_id\"`" + `
+	TrackingCode *string           ` + "`json:\"tracking_code,omitempty\"`" + `
+	Items        []string          ` + "`json:\"items\"`" + `
+	Metadata     map[string]string ` + "`json:\"metadata\"`" + `
 }
 `
 	if err := os.WriteFile(filepath.Join(v2Dir, "order_events.go"), []byte(v2Code), 0o644); err != nil {
@@ -269,6 +276,56 @@ func TestRoundTripV2(t *testing.T) {
 	}
 	if restored.Currency != domainEvent.Currency {
 		t.Errorf("Currency mismatch: got %s, want %s", restored.Currency, domainEvent.Currency)
+	}
+}
+
+func TestRoundTripComplexTypes(t *testing.T) {
+	tracking := "TRACK-12345"
+	domainEvent := v2.OrderShipped{
+		OrderID:      "order-456",
+		TrackingCode: &tracking,
+		Items:        []string{"item-1", "item-2", "item-3"},
+		Metadata:     map[string]string{"carrier": "dhl", "priority": "high"},
+	}
+
+	esEvents, err := ToESEvents("Order", "order-456", []any{domainEvent})
+	if err != nil {
+		t.Fatalf("ToESEvents failed: %v", err)
+	}
+
+	persistedEvent := store.PersistedEvent{
+		CreatedAt:      esEvents[0].CreatedAt,
+		StreamType:     esEvents[0].StreamType,
+		EventType:      esEvents[0].EventType,
+		StreamID:       esEvents[0].StreamID,
+		Payload:        esEvents[0].Payload,
+		GlobalPosition: 3,
+		StreamVersion:  2,
+		EventVersion:   esEvents[0].EventVersion,
+		EventID:        esEvents[0].EventID,
+	}
+
+	domainEvents, err := FromESEvents[any]([]store.PersistedEvent{persistedEvent})
+	if err != nil {
+		t.Fatalf("FromESEvents failed: %v", err)
+	}
+
+	restored, ok := domainEvents[0].(v2.OrderShipped)
+	if !ok {
+		t.Fatalf("Expected v2.OrderShipped, got %T", domainEvents[0])
+	}
+
+	if restored.OrderID != "order-456" {
+		t.Errorf("OrderID mismatch")
+	}
+	if restored.TrackingCode == nil || *restored.TrackingCode != tracking {
+		t.Errorf("TrackingCode mismatch")
+	}
+	if len(restored.Items) != 3 || restored.Items[1] != "item-2" {
+		t.Errorf("Items slice mismatch: %v", restored.Items)
+	}
+	if restored.Metadata["carrier"] != "dhl" {
+		t.Errorf("Metadata map mismatch: %v", restored.Metadata)
 	}
 }
 

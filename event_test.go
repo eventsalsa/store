@@ -366,3 +366,112 @@ func TestStream_FullWorkflow(t *testing.T) {
 		t.Errorf("Stream.Len() = %v, want 3", stream.Len())
 	}
 }
+
+func TestNullString_Scan(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     any
+		wantStr   string
+		wantValid bool
+		wantErr   bool
+	}{
+		{
+			name:      "nil value scans as invalid empty string",
+			input:     nil,
+			wantStr:   "",
+			wantValid: false,
+			wantErr:   false,
+		},
+		{
+			name:      "string value scans as valid string",
+			input:     "test-string",
+			wantStr:   "test-string",
+			wantValid: true,
+			wantErr:   false,
+		},
+		{
+			name:      "empty string scans as valid string",
+			input:     "",
+			wantStr:   "",
+			wantValid: true,
+			wantErr:   false,
+		},
+		{
+			name:      "byte slice scans as valid string",
+			input:     []byte("byte-slice-val"),
+			wantStr:   "byte-slice-val",
+			wantValid: true,
+			wantErr:   false,
+		},
+		{
+			name:      "unsupported integer type returns error",
+			input:     12345,
+			wantStr:   "",
+			wantValid: false,
+			wantErr:   true,
+		},
+		{
+			name:      "unsupported boolean type returns error",
+			input:     true,
+			wantStr:   "",
+			wantValid: false,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ns NullString
+			err := ns.Scan(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("NullString.Scan() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if ns.String != tt.wantStr {
+				t.Errorf("NullString.String = %q, want %q", ns.String, tt.wantStr)
+			}
+			if ns.Valid != tt.wantValid {
+				t.Errorf("NullString.Valid = %v, want %v", ns.Valid, tt.wantValid)
+			}
+		})
+	}
+}
+
+func TestNullString_Value(t *testing.T) {
+	tests := []struct {
+		name    string
+		ns      NullString
+		wantVal any
+		wantErr bool
+	}{
+		{
+			name:    "invalid NullString returns nil",
+			ns:      NullString{String: "some-str", Valid: false},
+			wantVal: nil,
+			wantErr: false,
+		},
+		{
+			name:    "valid NullString with empty string returns nil",
+			ns:      NullString{String: "", Valid: true},
+			wantVal: nil,
+			wantErr: false,
+		},
+		{
+			name:    "valid NullString with non-empty string returns string value",
+			ns:      NullString{String: "correlation-123", Valid: true},
+			wantVal: "correlation-123",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val, err := tt.ns.Value()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("NullString.Value() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if val != tt.wantVal {
+				t.Errorf("NullString.Value() = %v, want %v", val, tt.wantVal)
+			}
+		})
+	}
+}
