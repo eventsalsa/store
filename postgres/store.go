@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -25,6 +27,10 @@ type StoreConfig struct {
 	// StreamHeadsTable is the name of the stream version tracking table
 	StreamHeadsTable string
 
+	// EventIDsTable is the optional companion table for enforcing global event_id uniqueness across partitions.
+	// If empty, companion table writes are skipped.
+	EventIDsTable string
+
 	// NotifyChannel is the Postgres NOTIFY channel name for event append notifications.
 	// When set, Append() executes pg_notify within the same transaction, so the
 	// notification fires only when the transaction commits.
@@ -37,6 +43,7 @@ func DefaultStoreConfig() *StoreConfig {
 	return &StoreConfig{
 		EventsTable:      "events",
 		StreamHeadsTable: "stream_heads",
+		EventIDsTable:    "",
 		Logger:           nil, // No logging by default
 	}
 }
@@ -62,6 +69,13 @@ func WithEventsTable(tableName string) StoreOption {
 func WithStreamHeadsTable(tableName string) StoreOption {
 	return func(c *StoreConfig) {
 		c.StreamHeadsTable = tableName
+	}
+}
+
+// WithEventIDsTable sets the companion event IDs table name for global uniqueness in partitioned layouts.
+func WithEventIDsTable(tableName string) StoreOption {
+	return func(c *StoreConfig) {
+		c.EventIDsTable = tableName
 	}
 }
 
@@ -198,6 +212,10 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 		}
 		globalPositions[i] = globalPos
 
+		if err := s.recordEventID(ctx, tx, event.EventID, globalPos, event.CreatedAt); err != nil {
+			return store.AppendResult{}, err
+		}
+
 		persistedEvents[i] = store.PersistedEvent{
 			GlobalPosition: globalPos,
 			StreamType:     event.StreamType,
@@ -216,12 +234,8 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 	}
 
 	// Send transactional NOTIFY — fires only when the caller commits the TX
-	if s.config.NotifyChannel != "" {
-		lastPos := globalPositions[len(globalPositions)-1]
-		_, err = tx.Exec(ctx, "SELECT pg_notify($1, $2)", s.config.NotifyChannel, fmt.Sprintf("%d", lastPos))
-		if err != nil {
-			return store.AppendResult{}, fmt.Errorf("failed to send notify: %w", err)
-		}
+	if err := s.sendNotification(ctx, tx, globalPositions[len(globalPositions)-1]); err != nil {
+		return store.AppendResult{}, err
 	}
 
 	if s.config.Logger != nil {
@@ -344,6 +358,42 @@ func validateHomogeneousStream(events []store.Event) error {
 		if e.StreamID != first.StreamID {
 			return fmt.Errorf("event %d: stream ID mismatch", i)
 		}
+	}
+	return nil
+}
+
+func (s *Store) recordEventID(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, globalPos int64, createdAt time.Time) error {
+	if s.config.EventIDsTable == "" {
+		return nil
+	}
+	//nolint:gosec // G201: table name from trusted config, not user input
+	dedupQuery := fmt.Sprintf(`
+		INSERT INTO %s (event_id, global_position, created_at)
+		VALUES ($1, $2, $3)
+	`, s.config.EventIDsTable)
+
+	_, err := tx.Exec(ctx, dedupQuery, eventID, globalPos, createdAt)
+	if err != nil {
+		if IsUniqueViolation(err) {
+			if s.config.Logger != nil {
+				s.config.Logger.Error(ctx, "duplicate event_id detected",
+					"event_id", eventID.String(),
+					"global_position", globalPos)
+			}
+			return fmt.Errorf("duplicate event ID %s: %w", eventID, err)
+		}
+		return fmt.Errorf("failed to record event id: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) sendNotification(ctx context.Context, tx pgx.Tx, lastPos int64) error {
+	if s.config.NotifyChannel == "" {
+		return nil
+	}
+	_, err := tx.Exec(ctx, "SELECT pg_notify($1, $2)", s.config.NotifyChannel, fmt.Sprintf("%d", lastPos))
+	if err != nil {
+		return fmt.Errorf("failed to send notify: %w", err)
 	}
 	return nil
 }
