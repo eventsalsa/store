@@ -1,6 +1,6 @@
 # Walkthrough: Migrate Integration Tests to testcontainers-go
 
-We have migrated the PostgreSQL integration test suite from manual `docker-compose` management to automated lifecycle management with [`testcontainers-go`](https://github.com/testcontainers/testcontainers-go) (`modules/postgres`).
+We have migrated the PostgreSQL integration test suite from manual `docker-compose` management to automated lifecycle management with [`testcontainers-go`](https://github.com/testcontainers/testcontainers-go) (`modules/postgres`). In addition, `pgx` was upgraded to `v5.10.0` and unit tests now run across a Go matrix of `1.25`, `1.26`, and `1.27`.
 
 ## Key Changes
 
@@ -23,33 +23,23 @@ We have migrated the PostgreSQL integration test suite from manual `docker-compo
   - Updated `test-integration` description.
 - **[.github/workflows/ci.yml](.github/workflows/ci.yml)**:
   - Removed GitHub Actions `services: postgres:` service container block and host environment variables. Tests run directly against the runner's Docker daemon via Testcontainers.
+  - Set `GOTOOLCHAIN: local` to prevent toolchain switching issues.
+  - Configured unit test matrix across Go versions `1.25`, `1.26`, and `1.27`.
 
 ### 4. Dependencies & Documentation
-- **[go.mod](go.mod)** / **`go.sum`**: Added `github.com/testcontainers/testcontainers-go` and `github.com/testcontainers/testcontainers-go/modules/postgres`.
+- **[go.mod](go.mod)** / **`go.sum`**:
+  - Upgraded `github.com/jackc/pgx/v5` to `v5.10.0`.
+  - Added `github.com/testcontainers/testcontainers-go` (`v0.44.0`) and `github.com/testcontainers/testcontainers-go/modules/postgres` (`v0.44.0`).
 - **[README.md](README.md)** & **[AGENTS.md](AGENTS.md)**: Updated development instructions to reflect Testcontainers usage.
 
 ---
 
 ## Verification Results
 
-### Automated Tests & Linting
-- **Unit Tests**:
-  ```bash
-  go test -v -race ./...
-  ```
-  Result: All unit tests passed across all packages.
-- **Integration Tests (Testcontainers)**:
-  ```bash
-  go test -p 1 -v -tags=integration ./...
-  ```
-  Result: Successfully booted `postgres:16-alpine`, executed all 20 integration tests (including optimistic concurrency, version tracking, stream reads, and gaps), and cleaned up container.
-- **Makefile Target**:
-  ```bash
-  make test-integration
-  ```
-  Result: Passed.
-- **Linter**:
-  ```bash
-  golangci-lint run --timeout=5m
-  ```
-  Result: 0 issues.
+### CI Workflow (`CI #32412418818`)
+- **Unit Tests (Go 1.25)**: Passed (49s)
+- **Unit Tests (Go 1.26)**: Passed (1m6s)
+- **Unit Tests (Go 1.27)**: Passed (20s)
+- **Integration Tests (Testcontainers)**: Passed (1m14s)
+- **Lint**: Passed (40s)
+- **Build**: Passed (24s)
