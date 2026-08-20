@@ -9,7 +9,8 @@ A minimal, production-ready event store for Go.
 ## Features
 
 - **PostgreSQL-backed event store** — append-only, immutable event log with BIGSERIAL global positions
-- **Optimistic concurrency control** — via expected versions enforced at the application and database level
+- **Optimistic concurrency control** — via expected versions enforced at the database level via `stream_heads`
+- **Optional range partitioning** — native PostgreSQL declarative RANGE partitioning & `pg_partman` integration
 - **Stream reads** — load a full or partial event history with optional version ranges
 - **Sequential event reading** — read events by global position for building consumers and projections
 - **Transaction-first design** — all operations accept `pgx.Tx`; you control transaction boundaries
@@ -313,18 +314,33 @@ Consumers can `LISTEN` on the same channel to wake up immediately instead of pol
 
 `cmd/migrate-gen` generates a single `.sql` file that creates all required tables and indexes.
 
-**CLI:**
+**Standard Tables (Default):**
 
 ```bash
 go run github.com/eventsalsa/store/cmd/migrate-gen -output migrations
 # writes migrations/20060102150405_init_event_sourcing.sql
+```
 
+**Native Range Partitioning:**
+
+```bash
 go run github.com/eventsalsa/store/cmd/migrate-gen \
   -output migrations \
-  -filename 001_events.sql \
-  -events-table my_events \
-  -stream-heads-table my_stream_heads
+  -partition-strategy native \
+  -partition-size 10000000 \
+  -initial-partitions 4
 ```
+
+**`pg_partman` Managed Partitioning:**
+
+```bash
+go run github.com/eventsalsa/store/cmd/migrate-gen \
+  -output migrations \
+  -partition-strategy partman \
+  -partman-maintenance pg_cron
+```
+
+For full DBA guides, background worker (`pg_partman_bgw`) setup, and partition detachment runbooks, see [Range Partitioning Guide](docs/partitioning.md).
 
 **`go:generate`:**
 
@@ -334,8 +350,8 @@ go run github.com/eventsalsa/store/cmd/migrate-gen \
 
 The generated migration creates:
 
-- **`events`** — append-only event log with `global_position BIGSERIAL` primary key, `event_id UUID UNIQUE`, and a `UNIQUE (stream_type, stream_id, stream_version)` constraint that enforces optimistic concurrency at the database level
-- **`stream_heads`** — one row per stream tracking its current version for O(1) version lookups during `Append`
+- **`events`** — append-only event log with `global_position BIGSERIAL` (or sequence-backed in partitioned mode) primary key
+- **`stream_heads`** — one row per stream tracking its current version for atomic stream version reservation and optimistic concurrency during `Append`
 
 ## Event Mapping Code Generator
 
