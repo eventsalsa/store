@@ -104,13 +104,14 @@ func NewStore(config *StoreConfig) *Store {
 }
 
 // Append implements store.EventStore.
-// It automatically assigns stream versions using the stream_heads table for O(1) lookup.
-// The expectedVersion parameter controls optimistic concurrency validation.
-// The database constraint on (stream_type, stream_id, stream_version) enforces
-// optimistic concurrency as a safety net - if another transaction commits between our version
-// check and insert, the insert will fail with a unique constraint violation.
+// It atomically reserves stream versions using the stream_heads table before inserting events.
+// The expectedVersion parameter controls optimistic concurrency validation directly in SQL:
+// - NoStream() / Exact(0): attempts to insert the initial stream head row; fails if already present
+// - Exact(N): conditionally updates the stream head matching expected version; fails if mismatch
+// - Any(): atomically increments or creates the stream head returning the reserved version range
 //
-//nolint:gocyclo // Cyclomatic complexity is acceptable here - comes from necessary logging and validation checks
+// Returns store.ErrOptimisticConcurrency if expectedVersion validation fails.
+// Returns store.ErrNoEvents if events slice is empty.
 func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.ExpectedVersion, events []store.Event) (store.AppendResult, error) {
 	if len(events) == 0 {
 		return store.AppendResult{}, store.ErrNoEvents
@@ -122,90 +123,24 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 			"expected_version", expectedVersion.String())
 	}
 
-	// Validate all events belong to same stream
+	if err := validateHomogeneousStream(events); err != nil {
+		return store.AppendResult{}, err
+	}
+
 	firstEvent := events[0]
-	for i := range events {
-		e := &events[i]
-		if e.StreamType != firstEvent.StreamType {
-			return store.AppendResult{}, fmt.Errorf("event %d: stream type mismatch", i)
-		}
-		if e.StreamID != firstEvent.StreamID {
-			return store.AppendResult{}, fmt.Errorf("event %d: stream ID mismatch", i)
-		}
-	}
 
-	// Fetch current version from stream_heads table
-	var currentVersion *int64
-	//nolint:gosec // G201: table name from trusted config, not user input
-	query := fmt.Sprintf(`
-		SELECT stream_version 
-		FROM %s 
-		WHERE stream_type = $1 AND stream_id = $2
-	`, s.config.StreamHeadsTable)
-
-	err := tx.QueryRow(ctx, query, firstEvent.StreamType, firstEvent.StreamID).Scan(&currentVersion)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return store.AppendResult{}, fmt.Errorf("failed to check current version: %w", err)
-	}
-
-	// Validate expected version
-	if !expectedVersion.IsAny() {
-		if expectedVersion.IsNoStream() {
-			if currentVersion != nil {
-				if s.config.Logger != nil {
-					s.config.Logger.Error(ctx, "expected version validation failed: stream already exists",
-						"stream_type", firstEvent.StreamType,
-						"stream_id", firstEvent.StreamID,
-						"current_version", *currentVersion,
-						"expected_version", expectedVersion.String())
-				}
-				return store.AppendResult{}, store.ErrOptimisticConcurrency
-			}
-		} else if expectedVersion.IsExact() {
-			if currentVersion == nil {
-				if s.config.Logger != nil {
-					s.config.Logger.Error(ctx, "expected version validation failed: stream does not exist",
-						"stream_type", firstEvent.StreamType,
-						"stream_id", firstEvent.StreamID,
-						"expected_version", expectedVersion.String())
-				}
-				return store.AppendResult{}, store.ErrOptimisticConcurrency
-			}
-			if *currentVersion != expectedVersion.Value() {
-				if s.config.Logger != nil {
-					s.config.Logger.Error(ctx, "expected version validation failed: version mismatch",
-						"stream_type", firstEvent.StreamType,
-						"stream_id", firstEvent.StreamID,
-						"current_version", *currentVersion,
-						"expected_version", expectedVersion.String())
-				}
-				return store.AppendResult{}, store.ErrOptimisticConcurrency
-			}
-		}
-	}
-
-	// Determine starting version for new events
-	var nextVersion int64
-	if currentVersion != nil {
-		nextVersion = *currentVersion + 1
-	} else {
-		nextVersion = 1
+	// Reserve stream version range atomically on stream_heads table
+	vRange, err := s.reserveStreamVersion(ctx, tx, firstEvent.StreamType, firstEvent.StreamID, expectedVersion, len(events))
+	if err != nil {
+		return store.AppendResult{}, err
 	}
 
 	if s.config.Logger != nil {
-		if currentVersion != nil {
-			s.config.Logger.Debug(ctx, "version calculated",
-				"stream_type", firstEvent.StreamType,
-				"stream_id", firstEvent.StreamID,
-				"current_version", *currentVersion,
-				"next_version", nextVersion)
-		} else {
-			s.config.Logger.Debug(ctx, "version calculated",
-				"stream_type", firstEvent.StreamType,
-				"stream_id", firstEvent.StreamID,
-				"current_version", "none",
-				"next_version", nextVersion)
-		}
+		s.config.Logger.Debug(ctx, "version range reserved",
+			"stream_type", firstEvent.StreamType,
+			"stream_id", firstEvent.StreamID,
+			"first_version", vRange.firstVersion,
+			"final_version", vRange.finalVersion)
 	}
 
 	// Insert events with auto-assigned versions and collect global positions and persisted events
@@ -224,7 +159,7 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 
 	for i := range events {
 		event := &events[i]
-		streamVersion := nextVersion + int64(i)
+		streamVersion := vRange.firstVersion + int64(i)
 
 		// Convert metadata []byte to string or nil to ensure compatibility with
 		// pgx's simple protocol mode (useful for pg_bouncer transaction mode).
@@ -280,21 +215,6 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 		}
 	}
 
-	// Update stream_heads with the new version (UPSERT pattern)
-	latestVersion := nextVersion + int64(len(events)) - 1
-	//nolint:gosec // G201: table name from trusted config, not user input
-	upsertQuery := fmt.Sprintf(`
-		INSERT INTO %s (stream_type, stream_id, stream_version, updated_at)
-		VALUES ($1, $2, $3, NOW())
-		ON CONFLICT (stream_type, stream_id)
-		DO UPDATE SET stream_version = $3, updated_at = NOW()
-	`, s.config.StreamHeadsTable)
-
-	_, err = tx.Exec(ctx, upsertQuery, firstEvent.StreamType, firstEvent.StreamID, latestVersion)
-	if err != nil {
-		return store.AppendResult{}, fmt.Errorf("failed to update stream head: %w", err)
-	}
-
 	// Send transactional NOTIFY — fires only when the caller commits the TX
 	if s.config.NotifyChannel != "" {
 		lastPos := globalPositions[len(globalPositions)-1]
@@ -309,7 +229,7 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 			"stream_type", firstEvent.StreamType,
 			"stream_id", firstEvent.StreamID,
 			"event_count", len(events),
-			"version_range", fmt.Sprintf("%d-%d", nextVersion, latestVersion),
+			"version_range", fmt.Sprintf("%d-%d", vRange.firstVersion, vRange.finalVersion),
 			"positions", globalPositions)
 	}
 
@@ -317,6 +237,115 @@ func (s *Store) Append(ctx context.Context, tx pgx.Tx, expectedVersion store.Exp
 		Events:          persistedEvents,
 		GlobalPositions: globalPositions,
 	}, nil
+}
+
+type versionRange struct {
+	firstVersion int64
+	finalVersion int64
+}
+
+func (s *Store) reserveStreamVersion(
+	ctx context.Context,
+	tx pgx.Tx,
+	streamType, streamID string,
+	expectedVersion store.ExpectedVersion,
+	count int,
+) (versionRange, error) {
+	numEvents := int64(count)
+
+	if expectedVersion.IsNoStream() || (expectedVersion.IsExact() && expectedVersion.Value() == 0) {
+		//nolint:gosec // G201: table name from trusted config, not user input
+		query := fmt.Sprintf(`
+			INSERT INTO %s (stream_type, stream_id, stream_version, updated_at)
+			VALUES ($1, $2, $3, NOW())
+		`, s.config.StreamHeadsTable)
+
+		_, err := tx.Exec(ctx, query, streamType, streamID, numEvents)
+		if err != nil {
+			if IsUniqueViolation(err) {
+				if s.config.Logger != nil {
+					s.config.Logger.Error(ctx, "expected version validation failed: stream already exists",
+						"stream_type", streamType,
+						"stream_id", streamID,
+						"expected_version", expectedVersion.String())
+				}
+				return versionRange{}, store.ErrOptimisticConcurrency
+			}
+			return versionRange{}, fmt.Errorf("failed to insert stream head: %w", err)
+		}
+
+		return versionRange{
+			firstVersion: 1,
+			finalVersion: numEvents,
+		}, nil
+	}
+
+	if expectedVersion.IsExact() {
+		expected := expectedVersion.Value()
+		//nolint:gosec // G201: table name from trusted config, not user input
+		query := fmt.Sprintf(`
+			UPDATE %s
+			SET stream_version = stream_version + $3, updated_at = NOW()
+			WHERE stream_type = $1 AND stream_id = $2 AND stream_version = $4
+		`, s.config.StreamHeadsTable)
+
+		tag, err := tx.Exec(ctx, query, streamType, streamID, numEvents, expected)
+		if err != nil {
+			return versionRange{}, fmt.Errorf("failed to update stream head: %w", err)
+		}
+
+		if tag.RowsAffected() == 0 {
+			if s.config.Logger != nil {
+				s.config.Logger.Error(ctx, "expected version validation failed: version mismatch or stream does not exist",
+					"stream_type", streamType,
+					"stream_id", streamID,
+					"expected_version", expectedVersion.String())
+			}
+			return versionRange{}, store.ErrOptimisticConcurrency
+		}
+
+		return versionRange{
+			firstVersion: expected + 1,
+			finalVersion: expected + numEvents,
+		}, nil
+	}
+
+	// Any() expected version - atomic UPSERT with increment
+	//nolint:gosec // G201: table name from trusted config, not user input
+	query := fmt.Sprintf(`
+		INSERT INTO %s (stream_type, stream_id, stream_version, updated_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (stream_type, stream_id)
+		DO UPDATE SET 
+			stream_version = %s.stream_version + EXCLUDED.stream_version,
+			updated_at = NOW()
+		RETURNING stream_version
+	`, s.config.StreamHeadsTable, s.config.StreamHeadsTable)
+
+	var finalVersion int64
+	err := tx.QueryRow(ctx, query, streamType, streamID, numEvents).Scan(&finalVersion)
+	if err != nil {
+		return versionRange{}, fmt.Errorf("failed to reserve stream version range: %w", err)
+	}
+
+	return versionRange{
+		firstVersion: finalVersion - numEvents + 1,
+		finalVersion: finalVersion,
+	}, nil
+}
+
+func validateHomogeneousStream(events []store.Event) error {
+	first := events[0]
+	for i := range events {
+		e := &events[i]
+		if e.StreamType != first.StreamType {
+			return fmt.Errorf("event %d: stream type mismatch", i)
+		}
+		if e.StreamID != first.StreamID {
+			return fmt.Errorf("event %d: stream ID mismatch", i)
+		}
+	}
+	return nil
 }
 
 const uniqueViolationSQLState = "23505"
