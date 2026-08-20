@@ -83,7 +83,7 @@ flowchart TD
 ### Phase 4: Documentation & Operator Guides
 
 #### [NEW] [`docs/partitioning.md`](docs/partitioning.md)
-- Complete DBA guide explaining range partitioning architecture, `stream_heads` concurrency control, native pre-allocation, `pg_partman`, and partition detachment.
+- Complete DBA guide explaining range partitioning architecture, `stream_heads` concurrency control, native pre-allocation, and `pg_partman`.
 
 #### [MODIFY] [`README.md`](README.md)
 - Update architectural documentation with partitioning options and `migrate-gen` CLI flags.

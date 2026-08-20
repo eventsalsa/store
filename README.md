@@ -340,7 +340,7 @@ go run github.com/eventsalsa/store/cmd/migrate-gen \
   -partman-maintenance pg_cron
 ```
 
-For full DBA guides, background worker (`pg_partman_bgw`) setup, and partition detachment runbooks, see [Range Partitioning Guide](docs/partitioning.md).
+For full DBA guides, maintenance automation, and background worker (`pg_partman_bgw`) setup, see [Range Partitioning Guide](docs/partitioning.md).
 
 **`go:generate`:**
 

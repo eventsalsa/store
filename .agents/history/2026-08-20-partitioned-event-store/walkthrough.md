@@ -35,7 +35,6 @@ We have implemented range partitioning on `global_position` for PostgreSQL event
 - **Location**: [`docs/partitioning.md`](docs/partitioning.md), [`README.md`](README.md)
   - Architectural overview diagrams and rationale.
   - DBA guide for partition pre-creation and monitoring.
-  - Zero-downtime partition detachment (`ALTER TABLE events DETACH PARTITION ... CONCURRENTLY`) and cold storage archival runbook.
 
 ---
 

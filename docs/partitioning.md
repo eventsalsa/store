@@ -1,6 +1,6 @@
 # Range Partitioning Guide & DBA Runbook
 
-`eventsalsa/store` supports optional **declarative PostgreSQL range partitioning** on the `events` table by `global_position`. This allows event stores scaling to hundreds of millions or billions of events to maintain fast index scans, optimize I/O and vacuum efficiency, and detach old partitions for cold storage without table locks or downtime.
+`eventsalsa/store` supports optional **declarative PostgreSQL range partitioning** on the `events` table by `global_position`. This allows event stores scaling to hundreds of millions or billions of events to maintain fast B-tree index scans and optimize I/O, autovacuum, and write throughput.
 
 ---
 
@@ -122,21 +122,3 @@ To create the next partition:
 CREATE TABLE IF NOT EXISTS events_p0040000001_p0050000000 PARTITION OF events
     FOR VALUES FROM (40000001) TO (50000001);
 ```
-
-### Partition Detachment & Cold Storage Archival
-
-One major advantage of range partitioning is zero-downtime partition detachment for data tiering, compression, or archival.
-
-To detach an old partition:
-```sql
--- Detach old partition concurrently without exclusive lock on parent table
-ALTER TABLE events DETACH PARTITION events_p0000000001_p0010000000 CONCURRENTLY;
-```
-
-Once detached:
-1. `events_p0000000001_p0010000000` is a standalone table containing historical events.
-2. You can dump/export it to Amazon S3 / Google Cloud Storage using `pg_dump`.
-3. Or drop it when retention expires:
-   ```sql
-   DROP TABLE events_p0000000001_p0010000000;
-   ```
