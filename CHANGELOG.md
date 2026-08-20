@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.0](https://github.com/eventsalsa/store/compare/v0.0.4...v0.1.0) (2026-08-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **store:** replace aggregate terminology with stream across codebase
+
+### Features
+
+* range partitioning on global_position & authoritative stream_heads concurrency control ([#11](https://github.com/eventsalsa/store/issues/11)) ([ca1319c](https://github.com/eventsalsa/store/commit/ca1319ca3b7b8885e53f9e8d538915d9b5abc4ab))
+
+
+### Code Refactoring
+
+* **store:** replace aggregate terminology with stream across codebase ([#7](https://github.com/eventsalsa/store/issues/7)) ([b22759d](https://github.com/eventsalsa/store/commit/b22759d594e1d2ee36df95e22b60466e427212c0))
+
 ## [0.0.4](https://github.com/eventsalsa/store/compare/v0.0.3...v0.0.4) (2026-08-14)
 
 
