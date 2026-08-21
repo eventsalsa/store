@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/eventsalsa/store/compare/v0.1.0...v0.2.0) (2026-08-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove consumer and scoped consumer interfaces ([#12](https://github.com/eventsalsa/store/issues/12))
+
+### Code Refactoring
+
+* remove consumer and scoped consumer interfaces ([#12](https://github.com/eventsalsa/store/issues/12)) ([ffa6faa](https://github.com/eventsalsa/store/commit/ffa6faaaeb33236cccb81b1d6180b885295eb227))
+
 ## [0.1.0](https://github.com/eventsalsa/store/compare/v0.0.4...v0.1.0) (2026-08-20)
 
 
