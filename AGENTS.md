@@ -12,7 +12,6 @@ This document defines the architecture, conventions, workflows, and skills used 
 *   **Caller-Controlled Transactions**: All store methods accept `pgx.Tx` directly. Callers begin transactions and control commit/rollback boundaries; the library never commits or rolls back.
 *   **Optimistic Concurrency**: Built-in version conflict detection via database constraints and the `stream_heads` table.
 *   **Immutable Events**: `Event` is a value object before persistence; `PersistedEvent` is the immutable record returned after storage.
-*   **Pull-Based Consumers**: Sequential event processing by global position using named, checkpointed consumers.
 
 ### Package Structure
 
@@ -20,7 +19,6 @@ This document defines the architecture, conventions, workflows, and skills used 
 store/                     # Core types (Event, PersistedEvent, Stream, AppendResult)
 │                          # + store interfaces (EventStore, EventReader, StreamReader,
 │                          #   GlobalPositionReader) + expected version helpers
-├── consumer/              # Consumer and ScopedConsumer interfaces
 ├── postgres/              # PostgreSQL implementation of all store interfaces
 ├── migrations/            # SQL migration generator (events + stream_heads tables)
 ├── eventmap/              # Code generator: maps domain event structs ↔ store.Event / store.PersistedEvent

@@ -14,7 +14,6 @@ A minimal, production-ready event store for Go.
 - **Stream reads** — load a full or partial event history with optional version ranges
 - **Sequential event reading** — read events by global position for building consumers and projections
 - **Transaction-first design** — all operations accept `pgx.Tx`; you control transaction boundaries
-- **Consumer interfaces** — `Consumer` and `ScopedConsumer` for event processing
 - **SQL migration generator** — `cmd/migrate-gen` generates a ready-to-apply `.sql` file
 - **Event mapping code generator** — `cmd/eventmap-gen` generates type-safe domain event mappings
 
@@ -246,42 +245,6 @@ Scoped async filtering is intentionally a worker/runtime concern rather than a s
 If a consumer needs to react to only some stream types, establish a safe frontier from the unscoped
 global stream first, then filter inside the runtime.
 
-### Consumers
-
-The `consumer` package defines the interfaces for event processing.
-
-`consumer.Consumer` is the base interface:
-
-```go
-type AuditLogConsumer struct{}
-
-func (c *AuditLogConsumer) Name() string { return "audit_log.v1" }
-
-func (c *AuditLogConsumer) Handle(ctx context.Context, tx pgx.Tx, event store.PersistedEvent) error {
-    // tx is the processor's transaction — use it for atomic read model + checkpoint updates.
-    // Never call tx.Commit() or tx.Rollback() here; the processor owns that.
-    _, err := tx.Exec(ctx,
-        "INSERT INTO audit_log (event_id, event_type, occurred_at) VALUES ($1, $2, $3)",
-        event.EventID, event.EventType, event.CreatedAt,
-    )
-    return err
-}
-```
-
-`consumer.ScopedConsumer` narrows delivery to specific stream types. Consumers that implement only `Consumer` receive all events.
-
-```go
-type UserReadModel struct{}
-
-func (p *UserReadModel) Name() string            { return "user_read_model.v1" }
-func (p *UserReadModel) StreamTypes() []string   { return []string{"User"} }
-
-func (p *UserReadModel) Handle(ctx context.Context, tx pgx.Tx, event store.PersistedEvent) error {
-    // Only receives events where StreamType == "User"
-    return nil
-}
-```
-
 ## PostgreSQL Implementation
 
 ### Configuration
@@ -308,7 +271,7 @@ s := postgres.NewStore(postgres.NewStoreConfig(
 ))
 ```
 
-Consumers can `LISTEN` on the same channel to wake up immediately instead of polling on a fixed interval.
+Subscribers can `LISTEN` on the same channel to wake up immediately instead of polling on a fixed interval.
 
 ## Migration Generator
 
