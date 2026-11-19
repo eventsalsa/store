@@ -1,5 +1,17 @@
 # eventsalsa/store
 
+> [!WARNING]
+> **This repository has moved and is now archived.**
+>
+> Development has moved to the [`eventsalsa/eventsalsa`](https://github.com/eventsalsa/eventsalsa) monorepo at [`store/`](https://github.com/eventsalsa/eventsalsa/tree/main/store), published under the `eventsalsa.dev/store` Go vanity module path (starting at [`store/v0.3.0`](https://github.com/eventsalsa/eventsalsa/releases/tag/store/v0.3.0)):
+> ```bash
+> go get eventsalsa.dev/store@v0.3.0
+> ```
+> - **Source**: https://github.com/eventsalsa/eventsalsa/tree/main/store
+> - **Documentation**: https://eventsalsa.dev/documentation/components/store/
+> - **Go Reference**: https://pkg.go.dev/eventsalsa.dev/store
+> - **Issues & PRs**: https://github.com/eventsalsa/eventsalsa/issues
+
 [![CI](https://github.com/eventsalsa/store/actions/workflows/ci.yml/badge.svg)](https://github.com/eventsalsa/store/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/eventsalsa/store)](https://goreportcard.com/report/github.com/eventsalsa/store)
 [![GoDoc](https://godoc.org/github.com/eventsalsa/store?status.svg)](https://godoc.org/github.com/eventsalsa/store)
